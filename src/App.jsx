@@ -112,7 +112,7 @@ function App() {
     if (error) return showActionError(error);
     setData((current) => ({ ...current, employees: [...current.employees, employee] }));
     setEmployeeDraft({ name: '', email: '', position: 'Server', role: 'employee' });
-    window.alert(`Temporary login code for ${employee.name}: ${loginCode}`);
+    await sendEmployeeInvite(employee, loginCode);
   };
 
   const removeEmployee = async (id) => {
@@ -142,7 +142,7 @@ function App() {
       ...current,
       employees: current.employees.map((item) => (item.id === employee.id ? updatedEmployee : item)),
     }));
-    window.alert(`Temporary login code for ${updatedEmployee.name}: ${loginCode}`);
+    await sendEmployeeInvite(updatedEmployee, loginCode);
   };
 
   const saveShift = async (event) => {
@@ -971,6 +971,25 @@ function EmptyState({ text }) {
 function showActionError(error) {
   console.error('Supabase action failed.', error);
   window.alert(error.message || 'The action could not be saved to Supabase.');
+}
+
+async function sendEmployeeInvite(employee, loginCode) {
+  const { error } = await supabase.functions.invoke('send-employee-invite', {
+    body: {
+      email: employee.email,
+      name: employee.name,
+      loginCode,
+      appUrl: window.location.origin,
+    },
+  });
+
+  if (error) {
+    console.warn('Invite email failed.', error);
+    window.alert(`Employee saved, but the invite email could not be sent. Give ${employee.name} this temporary code: ${loginCode}`);
+    return;
+  }
+
+  window.alert(`Employee saved. Invite email sent to ${employee.email}.`);
 }
 
 function generateLoginCode() {

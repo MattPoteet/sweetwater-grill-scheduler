@@ -18,6 +18,25 @@ npm run dev
 5. Restart `npm run dev`.
 6. Add at least one manager row to the `employees` table.
 
+## Employee invite emails
+
+Employee invite emails are sent through the Supabase Edge Function in `supabase/functions/send-employee-invite`.
+
+Configure these Supabase function secrets:
+
+```bash
+supabase secrets set RESEND_API_KEY=your-resend-api-key
+supabase secrets set FROM_EMAIL="Sweetwater Grill Scheduler <schedule@yourdomain.com>"
+```
+
+Deploy the function:
+
+```bash
+supabase functions deploy send-employee-invite
+```
+
+When a manager adds an employee or resets their code, the app emails that employee a temporary first-time code and asks them to create a password.
+
 The included schema creates:
 
 - `employees`
