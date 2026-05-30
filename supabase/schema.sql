@@ -107,7 +107,7 @@ create policy "scheduler_public_access" on notifications
   with check (true);
 
 insert into employees (name, email, role, position, active, login_code, must_change_password)
-values ('Matthew', 'manager@sweetwatergrill.local', 'manager', 'General Manager', true, 'SWG-MANAGER-2026', true)
+values ('Matthew', 'matthewpoteet1@gmail.com', 'manager', 'General Manager', true, 'SWG-MANAGER-2026', true)
 on conflict (email) do update set
   name = excluded.name,
   role = excluded.role,
