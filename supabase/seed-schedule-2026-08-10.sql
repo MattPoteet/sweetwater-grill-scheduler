@@ -69,7 +69,7 @@ with schedule_rows(schedule_name, work_date, start_time, end_time, station, note
     ('Grey', '2026-08-16'::date, '10:00'::time, '22:00'::time, 'Dish/Cook', 'PDF label: Grey whenever')
 )
 insert into shifts (employee_id, date, start_time, end_time, station, notes)
-select employees.id, schedule_rows.work_date, schedule_rows.start_time, schedule_rows.end_time, schedule_rows.station, schedule_rows.notes
+select employees.id, schedule_rows.work_date, schedule_rows.start_time, schedule_rows.end_time, schedule_rows.station, ''
 from schedule_rows
 join employees on lower(employees.name) = lower(schedule_rows.schedule_name)
 where not exists (

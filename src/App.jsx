@@ -717,7 +717,7 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
             <ApprovalItem
               key={request.id}
               title={`${nameFor(employees, request.requester_id)} requested coverage`}
-              detail={`${shift ? `${formatDate(shift.date)} ${shift.start_time}-${shift.end_time}` : 'Shift'} accepted by ${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'no one yet'}`}
+              detail={`${shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)}` : 'Shift'} accepted by ${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'no one yet'}`}
               disabled={!request.accepted_by_id}
               onApprove={() => onApproveCoverage(request.id, 'Approved')}
               onDeny={() => onApproveCoverage(request.id, 'Denied')}
@@ -801,7 +801,7 @@ function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, 
         <SectionTitle icon={Send} title="Request coverage" />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_id: event.target.value })} required>
           <option value="">Select your shift</option>
-          {myShifts.map((shift) => <option key={shift.id} value={shift.id}>{formatDate(shift.date)} {shift.start_time}-{shift.end_time} {shift.station}</option>)}
+          {myShifts.map((shift) => <option key={shift.id} value={shift.id}>{formatDate(shift.date)} {formatTimeRange(shift)} {shift.station}</option>)}
         </select>
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.target_employee_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, target_employee_id: event.target.value })}>
           <option value="all">Send to all eligible employees</option>
@@ -843,7 +843,7 @@ function RequestsPanel({ currentUser, employees, shifts, timeOffRequests, covera
           return (
             <div key={request.id} className="rounded-lg bg-paper p-3 shadow-soft">
               <p className="font-bold">{nameFor(employees, request.requester_id)} needs coverage</p>
-              <p className="text-sm text-charcoal/65">{shift ? `${formatDate(shift.date)} ${shift.start_time}-${shift.end_time} ${shift.station}` : 'Shift unavailable'}</p>
+              <p className="text-sm text-charcoal/65">{shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)} ${shift.station}` : 'Shift unavailable'}</p>
               <button className="mt-3 rounded-md bg-green px-4 py-2 font-bold text-white" onClick={() => onAcceptCoverage(request.id)}>Accept</button>
             </div>
           );
@@ -902,7 +902,7 @@ function ScheduleList({ employees, shifts, weekDays, onEdit, onDelete }) {
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-teal text-sm font-bold text-white">{initials(nameFor(employees, shift.employee_id))}</div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold">{nameFor(employees, shift.employee_id)}</p>
-                      <p className="text-sm text-charcoal/65">{shift.start_time}-{shift.end_time} - {shift.station}</p>
+                      <p className="text-sm text-charcoal/65">{formatTimeRange(shift)} - {shift.station}</p>
                       {shift.notes && <p className="mt-1 text-sm text-charcoal/55">{shift.notes}</p>}
                     </div>
                     {onEdit && (
@@ -1086,6 +1086,20 @@ function formatDate(value) {
   if (!value) return 'Unscheduled';
   const [year, month, day] = value.split('-').map(Number);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day));
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  const [hourPart, minutePart] = value.split(':');
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const standardHour = hour % 12 || 12;
+  return `${standardHour}:${minute.toString().padStart(2, '0')} ${suffix}`;
+}
+
+function formatTimeRange(shift) {
+  return `${formatTime(shift.start_time)}-${formatTime(shift.end_time)}`;
 }
 
 function nameFor(employees, id) {
