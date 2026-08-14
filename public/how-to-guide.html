@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sweetwater Grill Scheduler — Employee Guide</title>
+  <style>
+    :root { color-scheme: light; --ink:#263532; --teal:#147c78; --green:#4d744d; --gold:#d6a536; --cream:#f6f0df; --paper:#fffdf7; --orange:#b85b35; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--cream); color:var(--ink); font-family:Arial,Helvetica,sans-serif; line-height:1.5; }
+    header { background:var(--ink); color:white; padding:24px 18px; }
+    header div, main { max-width:800px; margin:auto; }
+    h1 { margin:0; font-size:clamp(1.7rem,5vw,2.5rem); }
+    header p { margin:6px 0 0; color:#ffffffbf; }
+    main { padding:18px; }
+    nav { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+    nav a, .print { border:0; border-radius:7px; background:var(--teal); color:white; padding:10px 14px; font-weight:700; text-decoration:none; cursor:pointer; }
+    section { background:var(--paper); border-radius:12px; padding:18px; margin:0 0 16px; box-shadow:0 4px 16px #26353214; }
+    h2 { margin:0 0 10px; color:var(--teal); }
+    h3 { margin:18px 0 6px; }
+    ol, ul { padding-left:24px; }
+    li { margin:7px 0; }
+    .callout { border-left:5px solid var(--gold); background:#d6a53620; padding:12px; border-radius:6px; }
+    .important { border-left-color:var(--orange); background:#b85b3515; }
+    .role-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .role { border:1px solid #26353218; border-radius:8px; padding:12px; }
+    .role h3 { margin-top:0; }
+    .es { border-top:7px solid var(--gold); }
+    footer { text-align:center; color:#26353299; padding:8px 18px 28px; }
+    @media print { body { background:white; } header { padding:14px; } nav,.print { display:none; } section { box-shadow:none; break-inside:avoid; border:1px solid #ddd; } .es { break-before:page; } }
+  </style>
+</head>
+<body>
+  <header><div><h1>Sweetwater Grill Scheduler</h1><p>Server &amp; Cook How-To Guide · Guía para meseros y cocineros</p></div></header>
+  <main>
+    <nav><a href="#english">English</a><a href="#spanish">Español</a><button class="print" onclick="window.print()">Print / Imprimir</button></nav>
+
+    <div id="english">
+      <section>
+        <h2>1. Sign in for the first time</h2>
+        <ol><li>Open the scheduler link your manager gives you.</li><li>Enter your name and one-time passcode.</li><li>Create a password you will remember.</li><li>After that, use your name and new password to sign in.</li></ol>
+        <p class="callout">Do not share your password. Ask a manager for a new passcode if you cannot sign in.</p>
+      </section>
+      <section>
+        <h2>2. Read the schedule</h2>
+        <ul><li><strong>Mine:</strong> your shifts for the selected week.</li><li><strong>Calendar:</strong> the whole schedule in a weekly calendar.</li><li><strong>Team:</strong> everyone working each day.</li><li>Use the left and right arrows to change weeks.</li><li>An orange <strong>Approved time off</strong> card means your request was approved.</li></ul>
+        <div class="role-grid"><div class="role"><h3>Servers</h3><p>Your entry shows your serving time and station. Available serving shifts can only be requested by servers.</p></div><div class="role"><h3>Cooks</h3><p>Your entry shows your kitchen time and assigned station. Check the notes for opening, closing, or prep details.</p></div></div>
+      </section>
+      <section>
+        <h2>3. Request time off</h2>
+        <ol><li>Tap <strong>Ask</strong>.</li><li>Choose the first and last day you need off.</li><li>Enter the reason and tap <strong>Send request</strong>.</li><li>Check <strong>My request status</strong>. Pending means the manager has not decided yet.</li></ol>
+        <p class="callout important">A request is not approved until its status says <strong>Approved</strong>. Submit requests as early as possible.</p>
+      </section>
+      <section>
+        <h2>4. Get coverage for your shift</h2>
+        <ol><li>Open <strong>Mine</strong> and find Request coverage.</li><li>Select the shift you cannot work.</li><li>Send it to one eligible coworker or everyone eligible.</li><li>Another employee must accept it, then a manager must approve it.</li><li>Until manager approval, the shift is still your responsibility.</li></ol>
+      </section>
+      <section>
+        <h2>5. Pick up a shift</h2>
+        <ol><li>Look under <strong>Available shifts</strong> or <strong>Coverage available</strong>.</li><li>Tap <strong>Ask to work</strong> or <strong>Accept</strong>.</li><li>Wait for manager approval and check Notifications.</li></ol>
+        <p class="callout">If you already work that day, the approved pickup combines with your current shift and shows one longer time range.</p>
+      </section>
+      <section><h2>6. Helpful tips</h2><ul><li>Tap the bell for approvals and coverage updates.</li><li>Use EN / ES at the top to change language.</li><li>Tap <strong>Add to home screen</strong> for quick phone access.</li><li>Tell a manager immediately if the schedule shows the wrong hours.</li></ul></section>
+    </div>
+
+    <div id="spanish" class="es">
+      <section>
+        <h2>1. Iniciar sesión por primera vez</h2>
+        <ol><li>Abre el enlace del horario que te dé tu gerente.</li><li>Escribe tu nombre y el código de un solo uso.</li><li>Crea una contraseña que recuerdes.</li><li>Después, usa tu nombre y la nueva contraseña para entrar.</li></ol>
+        <p class="callout">No compartas tu contraseña. Pide un código nuevo al gerente si no puedes entrar.</p>
+      </section>
+      <section>
+        <h2>2. Leer el horario</h2>
+        <ul><li><strong>Mío:</strong> tus turnos de la semana seleccionada.</li><li><strong>Calendario:</strong> todo el horario en un calendario semanal.</li><li><strong>Equipo:</strong> todas las personas que trabajan cada día.</li><li>Usa las flechas para cambiar de semana.</li><li>Una tarjeta naranja de <strong>Tiempo libre aprobado</strong> significa que aprobaron tu solicitud.</li></ul>
+        <div class="role-grid"><div class="role"><h3>Meseros</h3><p>Tu entrada muestra el horario y puesto de servicio. Solo los meseros pueden solicitar turnos disponibles de servicio.</p></div><div class="role"><h3>Cocineros</h3><p>Tu entrada muestra el horario de cocina y el puesto asignado. Revisa las notas para detalles de apertura, cierre o preparación.</p></div></div>
+      </section>
+      <section>
+        <h2>3. Solicitar tiempo libre</h2>
+        <ol><li>Toca <strong>Solicitar</strong>.</li><li>Elige el primer y último día que necesitas libre.</li><li>Escribe el motivo y toca <strong>Enviar solicitud</strong>.</li><li>Revisa <strong>Estado de mis solicitudes</strong>. Pendiente significa que el gerente todavía no decidió.</li></ol>
+        <p class="callout important">No está aprobado hasta que el estado diga <strong>Aprobado</strong>. Envía la solicitud lo antes posible.</p>
+      </section>
+      <section>
+        <h2>4. Pedir cobertura para tu turno</h2>
+        <ol><li>Abre <strong>Mío</strong> y busca Solicitar cobertura.</li><li>Selecciona el turno que no puedes trabajar.</li><li>Envíalo a un compañero elegible o a todos.</li><li>Otro empleado debe aceptarlo y luego el gerente debe aprobarlo.</li><li>Hasta que el gerente lo apruebe, el turno sigue siendo tu responsabilidad.</li></ol>
+      </section>
+      <section>
+        <h2>5. Tomar un turno</h2>
+        <ol><li>Busca en <strong>Turnos disponibles</strong> o <strong>Cobertura disponible</strong>.</li><li>Toca <strong>Pedir trabajar</strong> o <strong>Aceptar</strong>.</li><li>Espera la aprobación del gerente y revisa las notificaciones.</li></ol>
+        <p class="callout">Si ya trabajas ese día, el turno aprobado se combina con tu turno actual y aparece como un solo horario más largo.</p>
+      </section>
+      <section><h2>6. Consejos útiles</h2><ul><li>Toca la campana para ver aprobaciones y cobertura.</li><li>Usa EN / ES arriba para cambiar el idioma.</li><li>Toca <strong>Agregar a la pantalla de inicio</strong> para abrirla fácilmente.</li><li>Avísale al gerente inmediatamente si las horas están equivocadas.</li></ul></section>
+    </div>
+  </main>
+  <footer>Sweetwater Grill · Employee Scheduling Guide</footer>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   Bell,
+  BookOpen,
   CalendarDays,
   Check,
   ChevronLeft,
@@ -46,6 +47,7 @@ const spanish = {
   'Employee list': 'Lista de empleados', 'Add employee': 'Agregar empleado', 'Passcode': 'Código',
   'Active staff': 'Personal activo', 'This week': 'Esta semana', 'Coverage': 'Cobertura', 'Week at a glance': 'Resumen semanal',
   'First time here? Enter your name and the one-time passcode your manager gave you. You will create your own password before entering the scheduler.': '¿Es tu primera vez? Escribe tu nombre y el código de un solo uso que te dio tu gerente. Crearás tu propia contraseña antes de entrar al horario.',
+  'How to use': 'Cómo usarla',
 };
 
 function App() {
@@ -362,17 +364,34 @@ function SchedulerApp() {
     const { data: updatedRequest, error } = await supabase.from('coverage_requests').update({ status }).eq('id', requestId).select('*').single();
     if (error) return showActionError(error);
     let updatedShift = shift;
+    let mergedShiftIds = [];
     if (status === 'Approved' && request.accepted_by_id) {
-      const shiftResult = await supabase.from('shifts').update({ employee_id: request.accepted_by_id }).eq('id', request.shift_id).select('*').single();
+      const sameDayShifts = data.shifts.filter((item) => item.id !== request.shift_id
+        && item.employee_id === request.accepted_by_id
+        && item.date === shift.date);
+      const mergedShift = mergeSameDayShifts([shift, ...sameDayShifts], request.accepted_by_id);
+      const shiftResult = await supabase.from('shifts').update(mergedShift).eq('id', request.shift_id).select('*').single();
       if (shiftResult.error) return showActionError(shiftResult.error);
       updatedShift = shiftResult.data;
+      mergedShiftIds = sameDayShifts.map((item) => item.id);
+      if (mergedShiftIds.length > 0) {
+        const coverageMoveResult = await supabase.from('coverage_requests').update({ shift_id: request.shift_id }).in('shift_id', mergedShiftIds);
+        if (coverageMoveResult.error) return showActionError(coverageMoveResult.error);
+        const deleteResult = await supabase.from('shifts').delete().in('id', mergedShiftIds);
+        if (deleteResult.error) return showActionError(deleteResult.error);
+      }
     }
     setData((current) => ({
       ...current,
       shifts: status === 'Approved' && request.accepted_by_id
-        ? current.shifts.map((item) => (item.id === request.shift_id ? updatedShift : item))
+        ? current.shifts
+          .filter((item) => !mergedShiftIds.includes(item.id))
+          .map((item) => (item.id === request.shift_id ? updatedShift : item))
         : current.shifts,
-      coverageRequests: current.coverageRequests.map((item) => (item.id === requestId ? updatedRequest : item)),
+      coverageRequests: current.coverageRequests.map((item) => {
+        if (item.id === requestId) return updatedRequest;
+        return mergedShiftIds.includes(item.shift_id) ? { ...item, shift_id: request.shift_id } : item;
+      }),
     }));
     await addNotification(request.requester_id, `Coverage ${status.toLowerCase()}`, `${formatDate(shift.date)} coverage was ${status.toLowerCase()}.`);
     if (request.accepted_by_id) {
@@ -686,6 +705,7 @@ function SchedulerApp() {
 }
 
 function HomeIntro({ showInstallButton, onInstall }) {
+  const { t } = useLanguage();
   return (
     <section className="mb-4 rounded-lg bg-charcoal p-4 text-cream shadow-soft">
       <div className="flex items-center gap-3">
@@ -702,8 +722,11 @@ function HomeIntro({ showInstallButton, onInstall }) {
           <p className="text-sm font-semibold text-cream/75">Restaurant Employee Scheduling</p>
         </div>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
         <p className="rounded-md bg-green/20 px-3 py-2 text-sm text-cream">Connected to Supabase</p>
+        <a className="inline-flex items-center justify-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm font-black text-cream" href="/how-to-guide.html" target="_blank" rel="noreferrer">
+          <BookOpen size={17} /> {t('How to use')}
+        </a>
         {showInstallButton && (
           <button className="inline-flex items-center justify-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-black text-charcoal" onClick={onInstall}>
             <Download size={17} /> Add to home screen
@@ -1376,6 +1399,34 @@ function getWeekDays(offset) {
 
 function sortShifts(a, b) {
   return `${a.date}${a.start_time}`.localeCompare(`${b.date}${b.start_time}`);
+}
+
+function mergeSameDayShifts(shifts, employeeId) {
+  const startTime = shifts.map((shift) => shift.start_time).sort()[0];
+  const endTime = shifts.map((shift) => shift.end_time).sort().at(-1);
+  const stations = [...new Set(shifts.map((shift) => shift.station).filter(Boolean))];
+  const regularNotes = [...new Set(shifts.map((shift) => shift.notes?.trim()).filter((note) => note && !isScheduleTimeLabel(note)))];
+  return {
+    employee_id: employeeId,
+    start_time: startTime,
+    end_time: endTime,
+    station: stations.join(' / '),
+    notes: regularNotes.join(' / ') || scheduleLabelForTimes(startTime, endTime),
+  };
+}
+
+function scheduleLabelForTimes(startTime, endTime) {
+  const start = startTime?.slice(0, 5);
+  const end = endTime?.slice(0, 5);
+  const labels = {
+    '10:00-22:00': 'Open-Close',
+    '10:00-15:00': 'Open-3:00 PM',
+    '15:00-22:00': '3:00 PM-Close',
+    '16:00-22:00': '4:00 PM-Close',
+    '12:00-14:00': '12:00 PM-2:00 PM',
+    '13:00-22:00': '1:00 PM-Close',
+  };
+  return labels[`${start}-${end}`] || '';
 }
 
 function toIsoDate(date) {
