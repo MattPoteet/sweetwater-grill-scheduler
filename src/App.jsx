@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   CalendarDays,
@@ -21,6 +21,46 @@ import { hasSupabaseConfig, supabase, supabaseConfigError } from './lib/supabase
 
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SESSION_KEY = 'sweetwater-auth-user';
+const LANGUAGE_KEY = 'sweetwater-language';
+const LanguageContext = createContext({ language: 'en', setLanguage: () => {}, t: (text) => text });
+const spanish = {
+  'Restaurant Employee Scheduling': 'Horario de empleados del restaurante', 'Name': 'Nombre',
+  'Password or one-time passcode': 'Contraseña o código de un solo uso', 'Login': 'Iniciar sesión',
+  'My schedule': 'Mi horario', 'Available shifts': 'Turnos disponibles', 'Request coverage': 'Solicitar cobertura',
+  'Select your shift': 'Selecciona tu turno', 'Send to all eligible employees': 'Enviar a todos los empleados elegibles',
+  'Full team schedule': 'Horario de todo el equipo', 'Calendar': 'Calendario', 'Request day off': 'Solicitar día libre',
+  'Reason': 'Motivo', 'Send request': 'Enviar solicitud', 'Coverage available': 'Cobertura disponible',
+  'My request status': 'Estado de mis solicitudes', 'No requests yet.': 'Aún no hay solicitudes.',
+  'No open coverage requests.': 'No hay solicitudes de cobertura abiertas.', 'No available shifts right now.': 'No hay turnos disponibles ahora.',
+  'No shifts scheduled.': 'No hay turnos programados.', 'No shifts': 'Sin turnos', 'Time off': 'Día libre',
+  'Approved time off': 'Tiempo libre aprobado', 'Notifications': 'Notificaciones', 'Mark read': 'Marcar como leídas',
+  'No notifications.': 'No hay notificaciones.', 'Request coverage button': 'Solicitar cobertura',
+  'Accept': 'Aceptar', 'Requested': 'Solicitado', 'Servers only': 'Solo meseros', 'Ask to work': 'Pedir trabajar',
+  'Mine': 'Mío', 'Team': 'Equipo', 'Ask': 'Solicitar', 'Logout': 'Salir', 'Home': 'Inicio', 'Staff': 'Personal',
+  'Build': 'Crear', 'Pending': 'Pendiente', 'Approved': 'Aprobado', 'Denied': 'Denegado',
+  'Add to home screen': 'Agregar a la pantalla de inicio', 'Connected to Supabase': 'Conectado a Supabase',
+  'Previous week': 'Semana anterior', 'Next week': 'Semana siguiente', 'Coverage for': 'Cobertura para',
+  'Sun': 'Dom', 'Mon': 'Lun', 'Tue': 'Mar', 'Wed': 'Mié', 'Thu': 'Jue', 'Fri': 'Vie', 'Sat': 'Sáb',
+  'Approve': 'Aprobar', 'Deny': 'Denegar', 'Edit': 'Editar', 'Create shift': 'Crear turno', 'Edit shift': 'Editar turno',
+  'Save shift': 'Guardar turno', 'Assign employee': 'Asignar empleado', 'Station': 'Puesto', 'Notes': 'Notas',
+  'Employee list': 'Lista de empleados', 'Add employee': 'Agregar empleado', 'Passcode': 'Código',
+  'Active staff': 'Personal activo', 'This week': 'Esta semana', 'Coverage': 'Cobertura', 'Week at a glance': 'Resumen semanal',
+  'First time here? Enter your name and the one-time passcode your manager gave you. You will create your own password before entering the scheduler.': '¿Es tu primera vez? Escribe tu nombre y el código de un solo uso que te dio tu gerente. Crearás tu propia contraseña antes de entrar al horario.',
+};
+
+function App() {
+  const [language, setLanguageState] = useState(() => localStorage.getItem(LANGUAGE_KEY) || 'en');
+  const setLanguage = (nextLanguage) => {
+    localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+    setLanguageState(nextLanguage);
+  };
+  const value = useMemo(() => ({ language, setLanguage, t: (text) => language === 'es' ? (spanish[text] || text) : text }), [language]);
+  return <LanguageContext.Provider value={value}><SchedulerApp /></LanguageContext.Provider>;
+}
+
+function useLanguage() {
+  return useContext(LanguageContext);
+}
 const emptyData = {
   employees: [],
   shifts: [],
@@ -30,7 +70,8 @@ const emptyData = {
 };
 const emptyShift = { employee_id: '', date: '', start_time: '16:00', end_time: '22:00', station: 'Dining Room', notes: '' };
 
-function App() {
+function SchedulerApp() {
+  const { language, setLanguage, t } = useLanguage();
   const [data, setData] = useState(emptyData);
   const [loadStatus, setLoadStatus] = useState(hasSupabaseConfig ? 'loading' : 'missing-config');
   const [loadError, setLoadError] = useState('');
@@ -56,7 +97,17 @@ function App() {
     .filter((shift) => weekDays.some((day) => day.iso === shift.date))
     .sort(sortShifts);
   const myShifts = visibleShifts.filter((shift) => shift.employee_id === currentUser?.id);
+  const approvedTimeOff = data.timeOffRequests.filter((request) => request.status === 'Approved');
   const unreadCount = data.notifications.filter((note) => note.employee_id === currentUser?.id && !note.read).length;
+  const changeLanguage = (nextLanguage) => {
+    localStorage.setItem(`${LANGUAGE_KEY}:${currentUserId || 'guest'}`, nextLanguage);
+    setLanguage(nextLanguage);
+  };
+
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem(`${LANGUAGE_KEY}:${currentUserId || 'guest'}`);
+    if (savedLanguage && savedLanguage !== language) setLanguage(savedLanguage);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -530,6 +581,7 @@ function App() {
             <p className="text-sm font-semibold leading-tight">{currentUser?.name}</p>
             <p className="text-xs text-cream/70">{currentUser?.position}</p>
           </div>
+          <LanguageToggle language={language} setLanguage={changeLanguage} />
           <button className="relative rounded-full bg-ink p-2 text-cream" onClick={() => setActiveTab('notifications')} aria-label="Notifications">
             <Bell size={20} />
             {unreadCount > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-gold px-1.5 text-xs font-bold text-charcoal">{unreadCount}</span>}
@@ -541,7 +593,7 @@ function App() {
         <HomeIntro showInstallButton={!isStandalone} onInstall={handleInstallApp} />
 
         {activeTab === 'dashboard' && isManager && (
-          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
+          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} timeOffRequests={approvedTimeOff} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
         )}
         {activeTab === 'employees' && isManager && (
           <EmployeesPanel employees={data.employees} employeeDraft={employeeDraft} setEmployeeDraft={setEmployeeDraft} onSave={saveEmployee} onRemove={removeEmployee} onResetCode={resetEmployeeCode} />
@@ -559,6 +611,7 @@ function App() {
             onSave={saveShift}
             onEdit={editShift}
             onDelete={deleteShift}
+            timeOffRequests={approvedTimeOff}
           />
         )}
         {activeTab === 'mySchedule' && (
@@ -575,9 +628,10 @@ function App() {
             onCoverageSubmit={submitCoverage}
             coverageRequests={data.coverageRequests}
             onAcceptCoverage={acceptCoverage}
+            timeOffRequests={approvedTimeOff.filter((request) => request.employee_id === currentUser.id)}
           />
         )}
-        {activeTab === 'teamSchedule' && <TeamSchedule employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />}
+        {activeTab === 'teamSchedule' && <TeamSchedule employees={data.employees} shifts={visibleShifts} weekDays={weekDays} timeOffRequests={approvedTimeOff} />}
         {activeTab === 'calendar' && (
           <CalendarPanel
             employees={data.employees}
@@ -585,6 +639,7 @@ function App() {
             weekDays={weekDays}
             weekOffset={weekOffset}
             setWeekOffset={setWeekOffset}
+            timeOffRequests={approvedTimeOff}
           />
         )}
         {activeTab === 'requests' && (
@@ -660,6 +715,7 @@ function HomeIntro({ showInstallButton, onInstall }) {
 }
 
 function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
+  const { language, setLanguage, t } = useLanguage();
   return (
     <main className="min-h-screen bg-cream px-4 py-8 text-charcoal">
       <section className="mx-auto max-w-md rounded-lg bg-paper p-5 shadow-soft">
@@ -671,11 +727,13 @@ function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
             event.currentTarget.style.display = 'none';
           }}
         />
-        <h1 className="text-2xl font-black">Sweetwater Grill Scheduler</h1>
-        <p className="mt-1 font-semibold text-charcoal/70">Restaurant Employee Scheduling</p>
+        <div className="flex items-start justify-between gap-3">
+          <div><h1 className="text-2xl font-black">Sweetwater Grill Scheduler</h1><p className="mt-1 font-semibold text-charcoal/70">{t('Restaurant Employee Scheduling')}</p></div>
+          <LanguageToggle language={language} setLanguage={setLanguage} dark />
+        </div>
         <form className="mt-5 grid gap-3" onSubmit={onSubmit}>
           <label className="grid gap-1 text-sm font-bold">
-            Name
+            {t('Name')}
             <input
               className="rounded-md border border-charcoal/15 bg-white px-3 py-3 text-base font-normal"
               type="text"
@@ -685,7 +743,7 @@ function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
             />
           </label>
           <label className="grid gap-1 text-sm font-bold">
-            Password or one-time passcode
+            {t('Password or one-time passcode')}
             <input
               className="rounded-md border border-charcoal/15 bg-white px-3 py-3 text-base font-normal"
               type="password"
@@ -695,13 +753,20 @@ function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
             />
           </label>
           {error && <p className="rounded-md bg-orange/15 p-3 text-sm font-semibold text-orange">{error}</p>}
-          <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">Login</button>
+          <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">{t('Login')}</button>
         </form>
-        <p className="mt-4 rounded-md bg-gold/20 p-3 text-sm text-charcoal/70">
-          First time here? Enter your name and the one-time passcode your manager gave you. You will create your own password before entering the scheduler.
-        </p>
+        <p className="mt-4 rounded-md bg-gold/20 p-3 text-sm text-charcoal/70">{t('First time here? Enter your name and the one-time passcode your manager gave you. You will create your own password before entering the scheduler.')}</p>
       </section>
     </main>
+  );
+}
+
+function LanguageToggle({ language, setLanguage, dark = false }) {
+  return (
+    <div className={`flex shrink-0 rounded-md p-1 text-xs font-black ${dark ? 'bg-charcoal/10 text-charcoal' : 'bg-white/10 text-cream'}`} aria-label="Language / Idioma">
+      <button className={`rounded px-2 py-1 ${language === 'en' ? 'bg-teal text-white' : ''}`} onClick={() => setLanguage('en')} type="button">EN</button>
+      <button className={`rounded px-2 py-1 ${language === 'es' ? 'bg-teal text-white' : ''}`} onClick={() => setLanguage('es')} type="button">ES</button>
+    </div>
   );
 }
 
@@ -773,7 +838,7 @@ function SetupState({ title, message }) {
   );
 }
 
-function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
+function ManagerDashboard({ data, visibleShifts, weekDays, timeOffRequests, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
   const pendingTimeOff = data.timeOffRequests.filter((request) => request.status === 'Pending');
   const pendingCoverage = data.coverageRequests.filter((request) => request.status === 'Pending');
   const deniedAvailableShifts = data.coverageRequests.filter((request) => {
@@ -800,7 +865,7 @@ function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onA
         onReopenAvailableShift={onReopenAvailableShift}
       />
       <SectionTitle icon={CalendarDays} title="Week at a glance" />
-      <ScheduleList employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />
+      <ScheduleList employees={data.employees} shifts={visibleShifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
     </div>
   );
 }
@@ -889,7 +954,7 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
 }
 
 function ScheduleBuilder(props) {
-  const { employees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete } = props;
+  const { employees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete, timeOffRequests } = props;
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
@@ -908,45 +973,48 @@ function ScheduleBuilder(props) {
         <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder="Notes" value={shiftDraft.notes} onChange={(event) => setShiftDraft({ ...shiftDraft, notes: event.target.value })} />
         <button className="inline-flex items-center justify-center gap-2 rounded-md bg-green px-4 py-3 font-bold text-white"><Check size={18} /> {editingShiftId ? 'Save shift' : 'Create shift'}</button>
       </form>
-      <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} onEdit={onEdit} onDelete={onDelete} />
+      <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} timeOffRequests={timeOffRequests} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }
 
-function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onAcceptCoverage }) {
+function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onAcceptCoverage, timeOffRequests }) {
+  const { t } = useLanguage();
   const eligible = employees.filter((employee) => employee.role === 'employee' && employee.active && employee.id !== currentUser.id && !isOpenShiftEmployee(employee));
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
-      <SectionTitle icon={UserRound} title="My schedule" />
-      <ScheduleList employees={employees} shifts={myShifts} weekDays={weekDays} />
+      <SectionTitle icon={UserRound} title={t('My schedule')} />
+      <ScheduleList employees={employees} shifts={myShifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
       <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onCoverageSubmit}>
         <SectionTitle icon={Send} title="Request coverage" />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_id: event.target.value })} required>
-          <option value="">Select your shift</option>
+          <option value="">{t('Select your shift')}</option>
           {myShifts.map((shift) => <option key={shift.id} value={shift.id}>{formatDate(shift.date)} {formatTimeRange(shift)} {shift.station}</option>)}
         </select>
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.target_employee_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, target_employee_id: event.target.value })}>
-          <option value="all">Send to all eligible employees</option>
+          <option value="all">{t('Send to all eligible employees')}</option>
           {eligible.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
         </select>
-        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-gold px-4 py-3 font-bold text-charcoal"><Send size={18} /> Request coverage</button>
+        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-gold px-4 py-3 font-bold text-charcoal"><Send size={18} /> {t('Request coverage')}</button>
       </form>
     </div>
   );
 }
 
-function TeamSchedule({ employees, shifts, weekDays }) {
+function TeamSchedule({ employees, shifts, weekDays, timeOffRequests }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-4">
-      <SectionTitle icon={UsersRound} title="Full team schedule" />
-      <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} />
+      <SectionTitle icon={UsersRound} title={t('Full team schedule')} />
+      <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
     </div>
   );
 }
 
 function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekDays, onRequest }) {
+  const { t } = useLanguage();
   const openEmployeeId = employees.find((employee) => isOpenShiftEmployee(employee))?.id;
   const visibleOpenRequests = coverageRequests
     .filter((request) => {
@@ -981,7 +1049,7 @@ function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekD
               onClick={() => onRequest(request.id)}
               title={serversOnly ? 'Only servers can request serving shifts' : undefined}
             >
-              {alreadyRequested ? 'Requested' : serversOnly ? 'Servers only' : 'Ask to work'}
+              {alreadyRequested ? t('Requested') : serversOnly ? t('Servers only') : t('Ask to work')}
             </button>
           </div>
         );
@@ -991,22 +1059,25 @@ function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekD
   );
 }
 
-function CalendarPanel({ employees, shifts, weekDays, weekOffset, setWeekOffset }) {
+function CalendarPanel({ employees, shifts, weekDays, weekOffset, setWeekOffset, timeOffRequests }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
-      <SectionTitle icon={CalendarDays} title="Calendar" />
-      <WeekCalendar employees={employees} shifts={shifts} weekDays={weekDays} />
+      <SectionTitle icon={CalendarDays} title={t('Calendar')} />
+      <WeekCalendar employees={employees} shifts={shifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
     </div>
   );
 }
 
-function WeekCalendar({ employees, shifts, weekDays }) {
+function WeekCalendar({ employees, shifts, weekDays, timeOffRequests = [] }) {
+  const { t } = useLanguage();
   return (
     <section className="overflow-x-auto rounded-lg bg-paper p-3 shadow-soft">
       <div className="grid min-w-[48rem] grid-cols-7 gap-2">
         {weekDays.map((day) => {
           const dayShifts = shifts.filter((shift) => shift.date === day.iso);
+          const dayTimeOff = timeOffRequests.filter((request) => dateIsInRange(day.iso, request.start_date, request.end_date));
           return (
             <div key={day.iso} className="min-h-80 rounded-md border border-charcoal/10 bg-white">
               <div className="border-b border-charcoal/10 bg-cream px-3 py-2">
@@ -1021,7 +1092,8 @@ function WeekCalendar({ employees, shifts, weekDays }) {
                     <p className="truncate text-xs text-charcoal/60">{shift.station}</p>
                   </div>
                 ))}
-                {dayShifts.length === 0 && <p className="rounded-md bg-cream p-2 text-xs text-charcoal/55">No shifts</p>}
+                {dayTimeOff.map((request) => <div key={`off-${request.id}`} className="rounded-md bg-orange/10 p-2"><p className="truncate text-sm font-black text-charcoal">{nameFor(employees, request.employee_id)}</p><p className="text-xs font-bold text-orange">{t('Time off')}</p></div>)}
+                {dayShifts.length === 0 && dayTimeOff.length === 0 && <p className="rounded-md bg-cream p-2 text-xs text-charcoal/55">{t('No shifts')}</p>}
               </div>
             </div>
           );
@@ -1032,6 +1104,7 @@ function WeekCalendar({ employees, shifts, weekDays }) {
 }
 
 function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffRequests, coverageRequests, timeOffDraft, setTimeOffDraft, onTimeOffSubmit, onAcceptCoverage }) {
+  const { t } = useLanguage();
   const openCoverage = coverageRequests.filter((request) => request.status === 'Pending' && !request.accepted_by_id && request.requester_id !== currentUser.id && (!request.target_employee_id || request.target_employee_id === currentUser.id));
   const myRequests = [...timeOffRequests.filter((request) => request.employee_id === currentUser.id), ...coverageRequests.filter((request) => request.requester_id === currentUser.id || request.accepted_by_id === currentUser.id)];
   return (
@@ -1042,8 +1115,8 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={timeOffDraft.start_date} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, start_date: event.target.value })} required />
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={timeOffDraft.end_date} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, end_date: event.target.value })} required />
         </div>
-        <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder="Reason" value={timeOffDraft.reason} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, reason: event.target.value })} required />
-        <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">Send request</button>
+        <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder={t('Reason')} value={timeOffDraft.reason} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, reason: event.target.value })} required />
+        <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">{t('Send request')}</button>
       </form>
       <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <SectionTitle icon={Send} title="Coverage available" />
@@ -1054,7 +1127,7 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
             <div key={request.id} className="rounded-lg bg-paper p-3 shadow-soft">
               <p className="font-bold">{nameFor(employees, request.requester_id)} needs coverage</p>
               <p className="text-sm text-charcoal/65">{shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)} ${shift.station}` : 'Shift unavailable'}</p>
-              <button className="mt-3 rounded-md bg-green px-4 py-2 font-bold text-white" onClick={() => onAcceptCoverage(request.id)}>Accept</button>
+              <button className="mt-3 rounded-md bg-green px-4 py-2 font-bold text-white" onClick={() => onAcceptCoverage(request.id)}>{t('Accept')}</button>
             </div>
           );
         })}
@@ -1094,11 +1167,13 @@ function NotificationsPanel({ notifications, onRead }) {
   );
 }
 
-function ScheduleList({ employees, shifts, weekDays, onEdit, onDelete }) {
+function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], onEdit, onDelete }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-2">
       {weekDays.map((day) => {
         const dayShifts = shifts.filter((shift) => shift.date === day.iso);
+        const dayTimeOff = timeOffRequests.filter((request) => dateIsInRange(day.iso, request.start_date, request.end_date));
         return (
           <section key={day.iso} className="rounded-lg bg-paper p-3 shadow-soft">
             <div className="mb-2 flex items-center justify-between">
@@ -1124,7 +1199,15 @@ function ScheduleList({ employees, shifts, weekDays, onEdit, onDelete }) {
                   </div>
                 </div>
               ))}
-              {dayShifts.length === 0 && <p className="rounded-md bg-cream p-3 text-sm text-charcoal/55">No shifts scheduled.</p>}
+              {dayTimeOff.map((request) => (
+                <div key={`off-${request.id}`} className="rounded-md border border-orange/20 bg-orange/10 p-3">
+                  <div className="flex gap-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange text-sm font-bold text-white">{initials(nameFor(employees, request.employee_id))}</div>
+                    <div><p className="font-bold">{nameFor(employees, request.employee_id)}</p><p className="text-sm font-bold text-orange">{t('Approved time off')}</p>{request.reason && <p className="mt-1 text-sm text-charcoal/55">{request.reason}</p>}</div>
+                  </div>
+                </div>
+              ))}
+              {dayShifts.length === 0 && dayTimeOff.length === 0 && <p className="rounded-md bg-cream p-3 text-sm text-charcoal/55">{t('No shifts scheduled.')}</p>}
             </div>
           </section>
         );
@@ -1134,66 +1217,73 @@ function ScheduleList({ employees, shifts, weekDays, onEdit, onDelete }) {
 }
 
 function ApprovalItem({ title, detail, onApprove, onDeny, disabled }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-md bg-white/10 p-3">
       <p className="font-bold">{title}</p>
       <p className="text-sm text-cream/70">{detail}</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-green px-3 py-2 font-bold text-white disabled:opacity-40" disabled={disabled} onClick={onApprove}><Check size={17} /> Approve</button>
-        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-orange px-3 py-2 font-bold text-white" onClick={onDeny}><X size={17} /> Deny</button>
+        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-green px-3 py-2 font-bold text-white disabled:opacity-40" disabled={disabled} onClick={onApprove}><Check size={17} /> {t('Approve')}</button>
+        <button className="inline-flex items-center justify-center gap-2 rounded-md bg-orange px-3 py-2 font-bold text-white" onClick={onDeny}><X size={17} /> {t('Deny')}</button>
       </div>
     </div>
   );
 }
 
 function WeekControls({ weekDays, weekOffset, setWeekOffset }) {
+  const { t } = useLanguage();
   return (
     <div className="flex items-center justify-between rounded-lg bg-charcoal p-3 text-cream shadow-soft">
-      <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset - 1)} aria-label="Previous week"><ChevronLeft size={19} /></button>
+      <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset - 1)} aria-label={t('Previous week')}><ChevronLeft size={19} /></button>
       <p className="text-center text-sm font-bold">{formatDate(weekDays[0].iso)} - {formatDate(weekDays[6].iso)}</p>
-      <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset + 1)} aria-label="Next week"><ChevronRight size={19} /></button>
+      <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset + 1)} aria-label={t('Next week')}><ChevronRight size={19} /></button>
     </div>
   );
 }
 
 function NavButton({ icon: Icon, label, active, onClick }) {
+  const { t } = useLanguage();
   return (
     <button className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md px-1 text-xs font-bold ${active ? 'bg-teal text-white' : 'text-charcoal/65'}`} onClick={onClick}>
       <Icon size={19} />
-      <span>{label}</span>
+      <span>{t(label)}</span>
     </button>
   );
 }
 
 function Metric({ label, value }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-lg bg-paper p-3 shadow-soft">
       <p className="text-2xl font-black text-charcoal">{value}</p>
-      <p className="text-sm font-semibold text-charcoal/60">{label}</p>
+      <p className="text-sm font-semibold text-charcoal/60">{t(label)}</p>
     </div>
   );
 }
 
 function SectionTitle({ icon: Icon, title, light }) {
+  const { t } = useLanguage();
   return (
     <div className="mb-2 flex items-center gap-2">
       <Icon className={light ? 'text-gold' : 'text-teal'} size={19} />
-      <h2 className={`text-base font-black ${light ? 'text-cream' : 'text-charcoal'}`}>{title}</h2>
+      <h2 className={`text-base font-black ${light ? 'text-cream' : 'text-charcoal'}`}>{t(title)}</h2>
     </div>
   );
 }
 
 function StatusBadge({ status }) {
+  const { t } = useLanguage();
   const classes = {
     Pending: 'bg-gold/20 text-charcoal',
     Approved: 'bg-green/15 text-green',
     Denied: 'bg-orange/15 text-orange',
   };
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${classes[status]}`}>{status}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${classes[status]}`}>{t(status)}</span>;
 }
 
 function EmptyState({ text }) {
-  return <p className="rounded-lg bg-paper p-4 text-sm text-charcoal/60 shadow-soft">{text}</p>;
+  const { t } = useLanguage();
+  return <p className="rounded-lg bg-paper p-4 text-sm text-charcoal/60 shadow-soft">{t(text)}</p>;
 }
 
 function showActionError(error) {
@@ -1356,6 +1446,10 @@ function getMonday(date) {
 function fromIsoDate(value) {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+function dateIsInRange(date, startDate, endDate) {
+  return Boolean(date && startDate && endDate && date >= startDate && date <= endDate);
 }
 
 function isInstalledApp() {
