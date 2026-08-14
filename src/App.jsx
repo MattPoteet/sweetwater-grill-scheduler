@@ -585,7 +585,7 @@ function SchedulerApp() {
   }
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className={`min-h-screen bg-cream ${isServer(currentUser) ? 'server-theme' : ''}`}>
       <header className="sticky top-0 z-20 border-b border-white/10 bg-charcoal text-cream shadow-soft">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <img

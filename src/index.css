@@ -23,3 +23,36 @@ textarea {
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
+
+/* A cheerful role-specific palette for servers. Kitchen, dish, and manager
+   accounts keep the original Sweetwater Grill theme. */
+.server-theme {
+  background: #fff0f6;
+  color: #4a2033;
+}
+
+.server-theme .bg-cream { background-color: #fff0f6; }
+.server-theme .bg-paper { background-color: #fffafd; }
+.server-theme .bg-white { background-color: #ffffff; }
+.server-theme .bg-charcoal { background-color: #6f2948; }
+.server-theme .bg-ink { background-color: #8f3d63; }
+.server-theme .bg-teal { background-color: #d94f8b; }
+.server-theme .bg-green { background-color: #bd5c8a; }
+.server-theme .bg-gold { background-color: #f3a8c9; }
+.server-theme .bg-orange { background-color: #c94d77; }
+.server-theme .bg-teal\/10 { background-color: rgb(217 79 139 / 0.12); }
+.server-theme .bg-green\/15,
+.server-theme .bg-green\/20 { background-color: rgb(189 92 138 / 0.18); }
+.server-theme .bg-gold\/15,
+.server-theme .bg-gold\/20 { background-color: rgb(243 168 201 / 0.25); }
+.server-theme .bg-orange\/10,
+.server-theme .bg-orange\/15 { background-color: rgb(201 77 119 / 0.14); }
+.server-theme .text-charcoal { color: #4a2033; }
+.server-theme .text-teal { color: #c43f7a; }
+.server-theme .text-green { color: #9f3f6d; }
+.server-theme .text-gold { color: #ffd0e4; }
+.server-theme .text-orange { color: #b63864; }
+.server-theme .border-charcoal\/10,
+.server-theme .border-charcoal\/15 { border-color: rgb(111 41 72 / 0.16); }
+.server-theme .border-orange\/20 { border-color: rgb(201 77 119 / 0.24); }
+.server-theme .shadow-soft { box-shadow: 0 14px 40px rgb(111 41 72 / 0.15); }
