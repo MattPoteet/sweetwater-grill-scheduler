@@ -699,7 +699,7 @@ function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onA
         onApproveCoverage={onApproveCoverage}
       />
       <SectionTitle icon={CalendarDays} title="Week at a glance" />
-      <ScheduleList employees={data.employees} shifts={visibleShifts.slice(0, 6)} weekDays={weekDays} />
+      <ScheduleList employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />
     </div>
   );
 }
@@ -1120,8 +1120,13 @@ function getInitialWeekOffsetFromShifts(shifts) {
     return 0;
   }
 
-  const sortedDates = shifts.map((shift) => shift.date).sort();
-  return getWeekOffsetForDate(sortedDates[0]);
+  const countsByWeek = shifts.reduce((counts, shift) => {
+    const weekStart = toIsoDate(getMonday(fromIsoDate(shift.date)));
+    counts[weekStart] = (counts[weekStart] || 0) + 1;
+    return counts;
+  }, {});
+  const [bestWeekStart] = Object.entries(countsByWeek).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  return getWeekOffsetForDate(bestWeekStart);
 }
 
 function getWeekOffsetForDate(value) {
