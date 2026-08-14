@@ -154,9 +154,21 @@ function App() {
   const removeEmployee = async (id) => {
     const { error } = await supabase.from('employees').update({ active: false }).eq('id', id);
     if (error) return showActionError(error);
+    const shiftDelete = await supabase.from('shifts').delete().eq('employee_id', id);
+    if (shiftDelete.error) return showActionError(shiftDelete.error);
+    const timeOffDelete = await supabase.from('time_off_requests').delete().eq('employee_id', id);
+    if (timeOffDelete.error) return showActionError(timeOffDelete.error);
+    const coverageDelete = await supabase.from('coverage_requests').delete().or(`requester_id.eq.${id},target_employee_id.eq.${id},accepted_by_id.eq.${id}`);
+    if (coverageDelete.error) return showActionError(coverageDelete.error);
+    const notificationDelete = await supabase.from('notifications').delete().eq('employee_id', id);
+    if (notificationDelete.error) return showActionError(notificationDelete.error);
     setData((current) => ({
       ...current,
       employees: current.employees.map((employee) => (employee.id === id ? { ...employee, active: false } : employee)),
+      shifts: current.shifts.filter((shift) => shift.employee_id !== id),
+      timeOffRequests: current.timeOffRequests.filter((request) => request.employee_id !== id),
+      coverageRequests: current.coverageRequests.filter((request) => request.requester_id !== id && request.target_employee_id !== id && request.accepted_by_id !== id),
+      notifications: current.notifications.filter((note) => note.employee_id !== id),
     }));
   };
 
