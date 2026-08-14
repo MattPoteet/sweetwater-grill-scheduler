@@ -269,7 +269,7 @@ function App() {
     }).select('*').single();
     if (error) return showActionError(error);
     setData((current) => ({ ...current, coverageRequests: [request, ...current.coverageRequests] }));
-    const recipients = targetId ? [targetId] : data.employees.filter((employee) => employee.role === 'employee' && employee.id !== currentUser.id).map((employee) => employee.id);
+    const recipients = targetId ? [targetId] : data.employees.filter((employee) => employee.role === 'employee' && employee.id !== currentUser.id && !isOpenShiftEmployee(employee)).map((employee) => employee.id);
     await Promise.all(recipients.map((id) => addNotification(id, 'Coverage requested', `${currentUser.name} needs coverage for ${formatDate(shift.date)} ${shift.start_time}.`)));
     await notifyManagers('Coverage request started', `${currentUser.name} requested shift coverage.`);
     setCoverageDraft({ shift_id: '', target_employee_id: 'all' });
@@ -284,6 +284,7 @@ function App() {
     }));
     await notifyManagers('Coverage accepted', `${currentUser.name} accepted a coverage request. Approval is needed.`);
   };
+
 
   const decideTimeOff = async (requestId, status) => {
     const request = data.timeOffRequests.find((item) => item.id === requestId);
@@ -550,6 +551,8 @@ function App() {
             coverageDraft={coverageDraft}
             setCoverageDraft={setCoverageDraft}
             onCoverageSubmit={submitCoverage}
+            coverageRequests={data.coverageRequests}
+            onAcceptCoverage={acceptCoverage}
           />
         )}
         {activeTab === 'teamSchedule' && <TeamSchedule employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />}
@@ -567,6 +570,7 @@ function App() {
             currentUser={currentUser}
             employees={data.employees}
             shifts={data.shifts}
+            weekDays={weekDays}
             timeOffRequests={data.timeOffRequests}
             coverageRequests={data.coverageRequests}
             timeOffDraft={timeOffDraft}
@@ -753,7 +757,7 @@ function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onA
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <Metric label="Active staff" value={data.employees.filter((employee) => employee.active).length} />
+        <Metric label="Active staff" value={data.employees.filter((employee) => employee.active && !isOpenShiftEmployee(employee)).length} />
         <Metric label="This week" value={visibleShifts.length} />
         <Metric label="Time off" value={pendingTimeOff.length} />
         <Metric label="Coverage" value={pendingCoverage.length} />
@@ -782,10 +786,11 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
         ))}
         {coverageRequests.map((request) => {
           const shift = shifts.find((item) => item.id === request.shift_id);
+          const isOpenShiftRequest = isOpenShiftEmployee(employees.find((employee) => employee.id === shift?.employee_id) || { name: '' });
           return (
             <ApprovalItem
               key={request.id}
-              title={`${nameFor(employees, request.requester_id)} requested coverage`}
+              title={isOpenShiftRequest ? `${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'Someone'} asked for an available shift` : `${nameFor(employees, request.requester_id)} requested coverage`}
               detail={`${shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)}` : 'Shift'} accepted by ${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'no one yet'}`}
               disabled={!request.accepted_by_id}
               onApprove={() => onApproveCoverage(request.id, 'Approved')}
@@ -800,6 +805,7 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
 }
 
 function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, onRemove, onResetCode }) {
+  const visibleEmployees = employees.filter((employee) => !isOpenShiftEmployee(employee));
   return (
     <div className="space-y-4">
       <SectionTitle icon={UsersRound} title="Employee list" />
@@ -817,7 +823,7 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
         <button className="inline-flex items-center justify-center gap-2 rounded-md bg-teal px-4 py-3 font-bold text-white"><Plus size={18} /> Add employee</button>
       </form>
       <div className="space-y-2">
-        {employees.map((employee) => (
+        {visibleEmployees.map((employee) => (
           <div key={employee.id} className={`flex items-center gap-3 rounded-lg bg-paper p-3 shadow-soft ${employee.active ? '' : 'opacity-50'}`}>
             <div className="grid h-10 w-10 place-items-center rounded-full bg-green text-sm font-bold text-white">{initials(employee.name)}</div>
             <div className="min-w-0 flex-1">
@@ -843,7 +849,7 @@ function ScheduleBuilder(props) {
         <SectionTitle icon={Clock} title={editingShiftId ? 'Edit shift' : 'Create shift'} />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={shiftDraft.employee_id} onChange={(event) => setShiftDraft({ ...shiftDraft, employee_id: event.target.value })} required>
           <option value="">Assign employee</option>
-          {employees.filter((employee) => employee.active && employee.role === 'employee').map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.position}</option>)}
+          {employees.filter((employee) => employee.active && employee.role === 'employee' && !isOpenShiftEmployee(employee)).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.position}</option>)}
         </select>
         <div className="grid grid-cols-3 gap-2">
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={shiftDraft.date} onChange={(event) => setShiftDraft({ ...shiftDraft, date: event.target.value })} required />
@@ -859,13 +865,14 @@ function ScheduleBuilder(props) {
   );
 }
 
-function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit }) {
-  const eligible = employees.filter((employee) => employee.role === 'employee' && employee.active && employee.id !== currentUser.id);
+function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onAcceptCoverage }) {
+  const eligible = employees.filter((employee) => employee.role === 'employee' && employee.active && employee.id !== currentUser.id && !isOpenShiftEmployee(employee));
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
       <SectionTitle icon={UserRound} title="My schedule" />
       <ScheduleList employees={employees} shifts={myShifts} weekDays={weekDays} />
+      <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onCoverageSubmit}>
         <SectionTitle icon={Send} title="Request coverage" />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_id: event.target.value })} required>
@@ -888,6 +895,49 @@ function TeamSchedule({ employees, shifts, weekDays }) {
       <SectionTitle icon={UsersRound} title="Full team schedule" />
       <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} />
     </div>
+  );
+}
+
+function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekDays, onRequest }) {
+  const openEmployeeId = employees.find((employee) => isOpenShiftEmployee(employee))?.id;
+  const visibleOpenRequests = coverageRequests
+    .filter((request) => {
+      const shift = shifts.find((item) => item.id === request.shift_id);
+      return request.status === 'Pending'
+        && !request.accepted_by_id
+        && shift?.employee_id === openEmployeeId
+        && weekDays.some((day) => day.iso === shift.date);
+    })
+    .sort((a, b) => {
+      const shiftA = shifts.find((shift) => shift.id === a.shift_id);
+      const shiftB = shifts.find((shift) => shift.id === b.shift_id);
+      return sortShifts(shiftA, shiftB);
+    });
+
+  return (
+    <section className="space-y-2">
+      <SectionTitle icon={Clock} title="Available shifts" />
+      {visibleOpenRequests.map((request) => {
+        const shift = shifts.find((item) => item.id === request.shift_id);
+        const alreadyRequested = request.accepted_by_id === currentUser.id;
+        return (
+          <div key={request.id} className="flex items-center gap-3 rounded-lg bg-paper p-3 shadow-soft">
+            <div className="min-w-0 flex-1">
+              <p className="font-bold">{formatDate(shift.date)} {formatTimeRange(shift)}</p>
+              <p className="text-sm text-charcoal/65">{shift.station}</p>
+            </div>
+            <button
+              className="rounded-md bg-green px-3 py-2 text-sm font-bold text-white disabled:opacity-45"
+              disabled={alreadyRequested}
+              onClick={() => onRequest(request.id)}
+            >
+              {alreadyRequested ? 'Requested' : 'Ask to work'}
+            </button>
+          </div>
+        );
+      })}
+      {visibleOpenRequests.length === 0 && <EmptyState text="No available shifts right now." />}
+    </section>
   );
 }
 
@@ -931,7 +981,7 @@ function WeekCalendar({ employees, shifts, weekDays }) {
   );
 }
 
-function RequestsPanel({ currentUser, employees, shifts, timeOffRequests, coverageRequests, timeOffDraft, setTimeOffDraft, onTimeOffSubmit, onAcceptCoverage }) {
+function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffRequests, coverageRequests, timeOffDraft, setTimeOffDraft, onTimeOffSubmit, onAcceptCoverage }) {
   const openCoverage = coverageRequests.filter((request) => request.status === 'Pending' && !request.accepted_by_id && request.requester_id !== currentUser.id && (!request.target_employee_id || request.target_employee_id === currentUser.id));
   const myRequests = [...timeOffRequests.filter((request) => request.employee_id === currentUser.id), ...coverageRequests.filter((request) => request.requester_id === currentUser.id || request.accepted_by_id === currentUser.id)];
   return (
@@ -945,6 +995,7 @@ function RequestsPanel({ currentUser, employees, shifts, timeOffRequests, covera
         <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder="Reason" value={timeOffDraft.reason} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, reason: event.target.value })} required />
         <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">Send request</button>
       </form>
+      <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <SectionTitle icon={Send} title="Coverage available" />
       <div className="space-y-2">
         {openCoverage.map((request) => {
@@ -1261,8 +1312,16 @@ function isInstalledApp() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
+function isOpenShiftEmployee(employee) {
+  return employee.name.trim().toLowerCase() === 'open shift';
+}
+
 function nameFor(employees, id) {
-  return employees.find((employee) => employee.id === id)?.name || 'Unassigned';
+  const employee = employees.find((item) => item.id === id);
+  if (!employee) {
+    return 'Unassigned';
+  }
+  return isOpenShiftEmployee(employee) ? 'Available shift' : employee.name;
 }
 
 function initials(name) {
