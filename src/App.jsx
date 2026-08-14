@@ -38,7 +38,7 @@ function App() {
   const [pendingPasswordUser, setPendingPasswordUser] = useState(null);
   const [passwordDraft, setPasswordDraft] = useState({ password: '', confirm: '' });
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [weekOffset, setWeekOffset] = useState(1);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [shiftDraft, setShiftDraft] = useState(emptyShift);
   const [editingShiftId, setEditingShiftId] = useState(null);
   const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
@@ -1064,11 +1064,12 @@ async function loadFromSupabase() {
 
 function getWeekDays(offset) {
   const today = new Date();
-  const sunday = new Date(today);
-  sunday.setDate(today.getDate() - today.getDay() + offset * 7);
+  const monday = new Date(today);
+  const daysSinceMonday = (today.getDay() + 6) % 7;
+  monday.setDate(today.getDate() - daysSinceMonday + offset * 7);
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(sunday);
-    date.setDate(sunday.getDate() + index);
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
     return { date, iso: toIsoDate(date) };
   });
 }
