@@ -277,6 +277,13 @@ function App() {
   };
 
   const acceptCoverage = async (requestId) => {
+    const request = data.coverageRequests.find((item) => item.id === requestId);
+    const shift = data.shifts.find((item) => item.id === request?.shift_id);
+    const shiftEmployee = data.employees.find((employee) => employee.id === shift?.employee_id);
+    if (isOpenShiftEmployee(shiftEmployee || { name: '' }) && isServingShift(shift) && !isServer(currentUser)) {
+      return showActionError(new Error('Only servers can request an available serving shift.'));
+    }
+
     const { data: updatedRequest, error } = await supabase.from('coverage_requests').update({ accepted_by_id: currentUser.id }).eq('id', requestId).select('*').single();
     if (error) return showActionError(error);
     setData((current) => ({
@@ -961,6 +968,7 @@ function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekD
       {visibleOpenRequests.map((request) => {
         const shift = shifts.find((item) => item.id === request.shift_id);
         const alreadyRequested = request.accepted_by_id === currentUser.id;
+        const serversOnly = isServingShift(shift) && !isServer(currentUser);
         return (
           <div key={request.id} className="flex items-center gap-3 rounded-lg bg-paper p-3 shadow-soft">
             <div className="min-w-0 flex-1">
@@ -969,10 +977,11 @@ function OpenShiftList({ currentUser, employees, shifts, coverageRequests, weekD
             </div>
             <button
               className="rounded-md bg-green px-3 py-2 text-sm font-bold text-white disabled:opacity-45"
-              disabled={alreadyRequested}
+              disabled={alreadyRequested || serversOnly}
               onClick={() => onRequest(request.id)}
+              title={serversOnly ? 'Only servers can request serving shifts' : undefined}
             >
-              {alreadyRequested ? 'Requested' : 'Ask to work'}
+              {alreadyRequested ? 'Requested' : serversOnly ? 'Servers only' : 'Ask to work'}
             </button>
           </div>
         );
@@ -1355,6 +1364,14 @@ function isInstalledApp() {
 
 function isOpenShiftEmployee(employee) {
   return employee.name.trim().toLowerCase() === 'open shift';
+}
+
+function isServer(employee) {
+  return employee?.position?.trim().toLowerCase() === 'server';
+}
+
+function isServingShift(shift) {
+  return shift?.station?.trim().toLowerCase() === 'server';
 }
 
 function nameFor(employees, id) {
