@@ -9,6 +9,7 @@ import {
   Download,
   LogOut,
   Plus,
+  RotateCcw,
   Send,
   ShieldCheck,
   Trash2,
@@ -321,6 +322,20 @@ function App() {
     }
   };
 
+  const reopenAvailableShift = async (requestId) => {
+    const { data: updatedRequest, error } = await supabase
+      .from('coverage_requests')
+      .update({ status: 'Pending', accepted_by_id: null })
+      .eq('id', requestId)
+      .select('*')
+      .single();
+    if (error) return showActionError(error);
+    setData((current) => ({
+      ...current,
+      coverageRequests: current.coverageRequests.map((request) => (request.id === requestId ? updatedRequest : request)),
+    }));
+  };
+
   const notifyManagers = async (title, body) => {
     await Promise.all(data.employees.filter((employee) => employee.role === 'manager').map((manager) => addNotification(manager.id, title, body)));
   };
@@ -519,7 +534,7 @@ function App() {
         <HomeIntro showInstallButton={!isStandalone} onInstall={handleInstallApp} />
 
         {activeTab === 'dashboard' && isManager && (
-          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} />
+          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
         )}
         {activeTab === 'employees' && isManager && (
           <EmployeesPanel employees={data.employees} employeeDraft={employeeDraft} setEmployeeDraft={setEmployeeDraft} onSave={saveEmployee} onRemove={removeEmployee} onResetCode={resetEmployeeCode} />
@@ -751,9 +766,14 @@ function SetupState({ title, message }) {
   );
 }
 
-function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onApproveCoverage }) {
+function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
   const pendingTimeOff = data.timeOffRequests.filter((request) => request.status === 'Pending');
   const pendingCoverage = data.coverageRequests.filter((request) => request.status === 'Pending');
+  const deniedAvailableShifts = data.coverageRequests.filter((request) => {
+    const shift = data.shifts.find((item) => item.id === request.shift_id);
+    const employee = data.employees.find((item) => item.id === shift?.employee_id);
+    return request.status === 'Denied' && isOpenShiftEmployee(employee || { name: '' });
+  });
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -767,8 +787,10 @@ function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onA
         shifts={data.shifts}
         timeOffRequests={pendingTimeOff}
         coverageRequests={pendingCoverage}
+        deniedAvailableShifts={deniedAvailableShifts}
         onApproveTimeOff={onApproveTimeOff}
         onApproveCoverage={onApproveCoverage}
+        onReopenAvailableShift={onReopenAvailableShift}
       />
       <SectionTitle icon={CalendarDays} title="Week at a glance" />
       <ScheduleList employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />
@@ -776,7 +798,7 @@ function ManagerDashboard({ data, visibleShifts, weekDays, onApproveTimeOff, onA
   );
 }
 
-function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, onApproveTimeOff, onApproveCoverage }) {
+function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, deniedAvailableShifts, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
   return (
     <section className="rounded-lg bg-charcoal p-4 text-cream shadow-soft">
       <SectionTitle icon={ShieldCheck} title="Manager approvals" light />
@@ -799,6 +821,25 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
           );
         })}
         {timeOffRequests.length === 0 && coverageRequests.length === 0 && <p className="rounded-md bg-white/10 p-3 text-sm text-cream/75">No pending approvals.</p>}
+        {deniedAvailableShifts.length > 0 && (
+          <div className="space-y-2 border-t border-white/15 pt-3">
+            <p className="text-sm font-bold text-cream/75">Denied available shifts</p>
+            {deniedAvailableShifts.map((request) => {
+              const shift = shifts.find((item) => item.id === request.shift_id);
+              return (
+                <div key={request.id} className="flex items-center gap-3 rounded-md bg-white/10 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold">{shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)}` : 'Unavailable shift'}</p>
+                    <p className="text-sm text-cream/70">{shift?.station || 'Open shift'}</p>
+                  </div>
+                  <button className="inline-flex items-center gap-2 rounded-md bg-gold px-3 py-2 font-bold text-charcoal" onClick={() => onReopenAvailableShift(request.id)}>
+                    <RotateCcw size={17} /> Reopen
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
