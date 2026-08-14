@@ -1,0 +1,23 @@
+{
+  "name": "Sweetwater Grill Scheduler",
+  "short_name": "SWG Schedule",
+  "description": "Sweetwater Grill employee scheduling app",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff8ea",
+  "theme_color": "#14201f",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

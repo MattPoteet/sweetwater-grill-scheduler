@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   LogOut,
   Plus,
   Send,
@@ -39,6 +40,8 @@ function App() {
   const [passwordDraft, setPasswordDraft] = useState({ password: '', confirm: '' });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [weekOffset, setWeekOffset] = useState(0);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(() => isInstalledApp());
   const [shiftDraft, setShiftDraft] = useState(emptyShift);
   const [editingShiftId, setEditingShiftId] = useState(null);
   const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
@@ -76,6 +79,29 @@ function App() {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker registration failed.', error));
+    }
+
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setIsStandalone(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
     };
   }, []);
 
@@ -400,6 +426,19 @@ function App() {
     setActiveTab('dashboard');
   };
 
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+      return;
+    }
+
+    window.alert('On iPhone or iPad, tap Share, then Add to Home Screen. On Android, open your browser menu and choose Install app or Add to Home screen.');
+  };
+
   if (loadStatus === 'missing-config') {
     return <SetupState title="Supabase setup required" message={supabaseConfigError || 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env, then restart npm run dev.'} />;
   }
@@ -464,7 +503,7 @@ function App() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-4">
-        <HomeIntro />
+        <HomeIntro showInstallButton={!isStandalone} onInstall={handleInstallApp} />
 
         {activeTab === 'dashboard' && isManager && (
           <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} />
@@ -502,6 +541,15 @@ function App() {
           />
         )}
         {activeTab === 'teamSchedule' && <TeamSchedule employees={data.employees} shifts={visibleShifts} weekDays={weekDays} />}
+        {activeTab === 'calendar' && (
+          <CalendarPanel
+            employees={data.employees}
+            shifts={visibleShifts}
+            weekDays={weekDays}
+            weekOffset={weekOffset}
+            setWeekOffset={setWeekOffset}
+          />
+        )}
         {activeTab === 'requests' && (
           <RequestsPanel
             currentUser={currentUser}
@@ -527,15 +575,16 @@ function App() {
               <NavButton icon={ShieldCheck} label="Home" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
               <NavButton icon={UsersRound} label="Staff" active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} />
               <NavButton icon={CalendarDays} label="Build" active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} />
+              <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
             </>
           ) : (
             <>
               <NavButton icon={UserRound} label="Mine" active={activeTab === 'mySchedule'} onClick={() => setActiveTab('mySchedule')} />
+              <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
               <NavButton icon={UsersRound} label="Team" active={activeTab === 'teamSchedule'} onClick={() => setActiveTab('teamSchedule')} />
               <NavButton icon={Send} label="Ask" active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} />
             </>
           )}
-          <NavButton icon={Bell} label="Alerts" active={activeTab === 'notifications'} onClick={() => setActiveTab('notifications')} />
           <NavButton icon={LogOut} label="Logout" active={false} onClick={handleLogout} />
         </div>
       </nav>
@@ -543,7 +592,7 @@ function App() {
   );
 }
 
-function HomeIntro() {
+function HomeIntro({ showInstallButton, onInstall }) {
   return (
     <section className="mb-4 rounded-lg bg-charcoal p-4 text-cream shadow-soft">
       <div className="flex items-center gap-3">
@@ -560,7 +609,14 @@ function HomeIntro() {
           <p className="text-sm font-semibold text-cream/75">Restaurant Employee Scheduling</p>
         </div>
       </div>
-      <p className="mt-3 rounded-md bg-green/20 px-3 py-2 text-sm text-cream">Connected to Supabase</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+        <p className="rounded-md bg-green/20 px-3 py-2 text-sm text-cream">Connected to Supabase</p>
+        {showInstallButton && (
+          <button className="inline-flex items-center justify-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-black text-charcoal" onClick={onInstall}>
+            <Download size={17} /> Add to home screen
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -820,6 +876,46 @@ function TeamSchedule({ employees, shifts, weekDays }) {
       <SectionTitle icon={UsersRound} title="Full team schedule" />
       <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} />
     </div>
+  );
+}
+
+function CalendarPanel({ employees, shifts, weekDays, weekOffset, setWeekOffset }) {
+  return (
+    <div className="space-y-4">
+      <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
+      <SectionTitle icon={CalendarDays} title="Calendar" />
+      <WeekCalendar employees={employees} shifts={shifts} weekDays={weekDays} />
+    </div>
+  );
+}
+
+function WeekCalendar({ employees, shifts, weekDays }) {
+  return (
+    <section className="overflow-x-auto rounded-lg bg-paper p-3 shadow-soft">
+      <div className="grid min-w-[48rem] grid-cols-7 gap-2">
+        {weekDays.map((day) => {
+          const dayShifts = shifts.filter((shift) => shift.date === day.iso);
+          return (
+            <div key={day.iso} className="min-h-80 rounded-md border border-charcoal/10 bg-white">
+              <div className="border-b border-charcoal/10 bg-cream px-3 py-2">
+                <p className="text-sm font-black">{dayNames[day.date.getDay()]}</p>
+                <p className="text-xs font-semibold text-charcoal/60">{formatDate(day.iso)}</p>
+              </div>
+              <div className="space-y-2 p-2">
+                {dayShifts.map((shift) => (
+                  <div key={shift.id} className="rounded-md bg-teal/10 p-2">
+                    <p className="truncate text-sm font-black text-charcoal">{nameFor(employees, shift.employee_id)}</p>
+                    <p className="text-xs font-bold text-teal">{formatTimeRange(shift)}</p>
+                    <p className="truncate text-xs text-charcoal/60">{shift.station}</p>
+                  </div>
+                ))}
+                {dayShifts.length === 0 && <p className="rounded-md bg-cream p-2 text-xs text-charcoal/55">No shifts</p>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1147,6 +1243,10 @@ function getMonday(date) {
 function fromIsoDate(value) {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+function isInstalledApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
 function nameFor(employees, id) {
