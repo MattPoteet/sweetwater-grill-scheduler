@@ -69,7 +69,22 @@ with schedule_rows(schedule_name, work_date, start_time, end_time, station, note
     ('Grey', '2026-08-16'::date, '10:00'::time, '22:00'::time, 'Dish/Cook', 'PDF label: Grey whenever')
 )
 insert into shifts (employee_id, date, start_time, end_time, station, notes)
-select employees.id, schedule_rows.work_date, schedule_rows.start_time, schedule_rows.end_time, schedule_rows.station, ''
+select
+  employees.id,
+  schedule_rows.work_date,
+  schedule_rows.start_time,
+  schedule_rows.end_time,
+  schedule_rows.station,
+  case
+    when schedule_rows.notes like '% open-close' then 'Open-Close'
+    when schedule_rows.notes like '% open-3' then 'Open-3:00 PM'
+    when schedule_rows.notes like '% 3-close' then '3:00 PM-Close'
+    when schedule_rows.notes like '% 4-close' then '4:00 PM-Close'
+    when schedule_rows.notes like '% 12-2' then '12:00 PM-2:00 PM'
+    when schedule_rows.notes like '% 1-close' then '1:00 PM-Close'
+    when schedule_rows.notes like '% whenever' then 'Whenever'
+    else ''
+  end
 from schedule_rows
 join employees on lower(employees.name) = lower(schedule_rows.schedule_name)
 where not exists (

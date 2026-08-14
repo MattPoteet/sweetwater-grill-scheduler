@@ -64,6 +64,7 @@ function App() {
       .then((nextData) => {
         if (!isMounted) return;
         setData(nextData);
+        setWeekOffset(getInitialWeekOffsetFromShifts(nextData.shifts));
         setLoadStatus('ready');
       })
       .catch((error) => {
@@ -903,7 +904,7 @@ function ScheduleList({ employees, shifts, weekDays, onEdit, onDelete }) {
                     <div className="min-w-0 flex-1">
                       <p className="font-bold">{nameFor(employees, shift.employee_id)}</p>
                       <p className="text-sm text-charcoal/65">{formatTimeRange(shift)} - {shift.station}</p>
-                      {shift.notes && <p className="mt-1 text-sm text-charcoal/55">{shift.notes}</p>}
+                      {displayShiftNote(shift) && <p className="mt-1 text-sm text-charcoal/55">{displayShiftNote(shift)}</p>}
                     </div>
                     {onEdit && (
                       <div className="flex gap-1">
@@ -1099,7 +1100,48 @@ function formatTime(value) {
 }
 
 function formatTimeRange(shift) {
+  if (isScheduleTimeLabel(shift.notes)) {
+    return shift.notes;
+  }
+
   return `${formatTime(shift.start_time)}-${formatTime(shift.end_time)}`;
+}
+
+function isScheduleTimeLabel(value) {
+  return ['Open-Close', 'Open-3:00 PM', '3:00 PM-Close', '4:00 PM-Close', '12:00 PM-2:00 PM', '1:00 PM-Close', 'Whenever'].includes(value);
+}
+
+function displayShiftNote(shift) {
+  return isScheduleTimeLabel(shift.notes) ? '' : shift.notes;
+}
+
+function getInitialWeekOffsetFromShifts(shifts) {
+  if (!shifts.length) {
+    return 0;
+  }
+
+  const sortedDates = shifts.map((shift) => shift.date).sort();
+  return getWeekOffsetForDate(sortedDates[0]);
+}
+
+function getWeekOffsetForDate(value) {
+  const todayMonday = getMonday(new Date());
+  const targetMonday = getMonday(fromIsoDate(value));
+  const millisecondsPerWeek = 7 * 24 * 60 * 60 * 1000;
+  return Math.round((targetMonday - todayMonday) / millisecondsPerWeek);
+}
+
+function getMonday(date) {
+  const monday = new Date(date);
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  return monday;
+}
+
+function fromIsoDate(value) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function nameFor(employees, id) {
