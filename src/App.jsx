@@ -41,7 +41,7 @@ function App() {
   const [weekOffset, setWeekOffset] = useState(1);
   const [shiftDraft, setShiftDraft] = useState(emptyShift);
   const [editingShiftId, setEditingShiftId] = useState(null);
-  const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee' });
+  const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
   const [timeOffDraft, setTimeOffDraft] = useState({ start_date: '', end_date: '', reason: '' });
   const [coverageDraft, setCoverageDraft] = useState({ shift_id: '', target_employee_id: 'all' });
 
@@ -96,12 +96,21 @@ function App() {
 
   const saveEmployee = async (event) => {
     event.preventDefault();
-    const loginCode = generateLoginCode();
+    const loginCode = employeeDraft.login_code.trim();
+    if (!loginCode) {
+      showActionError(new Error('Create a one-time passcode before adding the employee.'));
+      return;
+    }
+
+    const email = employeeDraft.email.trim() || buildEmployeeLoginEmail(employeeDraft.name, data.employees);
     const { data: employee, error } = await supabase
       .from('employees')
       .insert({
         active: true,
-        ...employeeDraft,
+        name: employeeDraft.name.trim(),
+        email,
+        position: employeeDraft.position.trim(),
+        role: employeeDraft.role,
         login_code: loginCode,
         must_change_password: true,
         password_hash: null,
@@ -111,8 +120,8 @@ function App() {
       .single();
     if (error) return showActionError(error);
     setData((current) => ({ ...current, employees: [...current.employees, employee] }));
-    setEmployeeDraft({ name: '', email: '', position: 'Server', role: 'employee' });
-    await sendEmployeeInvite(employee, loginCode);
+    setEmployeeDraft({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
+    window.alert(`${employee.name} was added. Give them this one-time passcode: ${loginCode}`);
   };
 
   const removeEmployee = async (id) => {
@@ -125,7 +134,11 @@ function App() {
   };
 
   const resetEmployeeCode = async (employee) => {
-    const loginCode = generateLoginCode();
+    const loginCode = window.prompt(`Enter a new one-time passcode for ${employee.name}:`)?.trim();
+    if (!loginCode) {
+      return;
+    }
+
     const { data: updatedEmployee, error } = await supabase
       .from('employees')
       .update({
@@ -142,7 +155,7 @@ function App() {
       ...current,
       employees: current.employees.map((item) => (item.id === employee.id ? updatedEmployee : item)),
     }));
-    await sendEmployeeInvite(updatedEmployee, loginCode);
+    window.alert(`${updatedEmployee.name}'s one-time passcode is now: ${loginCode}`);
   };
 
   const saveShift = async (event) => {
@@ -295,11 +308,15 @@ function App() {
   const handleLogin = async (event) => {
     event.preventDefault();
     setLoginError('');
-    const email = loginDraft.email.trim().toLowerCase();
-    const employee = data.employees.find((item) => item.email.toLowerCase() === email && item.active);
+    const loginName = loginDraft.email.trim().toLowerCase();
+    const employee = data.employees.find((item) => {
+      const employeeName = item.name.toLowerCase();
+      const employeeEmail = item.email.toLowerCase();
+      return item.active && (employeeName === loginName || employeeEmail === loginName);
+    });
 
     if (!employee) {
-      setLoginError('No active employee was found for that email.');
+      setLoginError('No active employee was found for that name.');
       return;
     }
 
@@ -563,17 +580,17 @@ function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
         <p className="mt-1 font-semibold text-charcoal/70">Restaurant Employee Scheduling</p>
         <form className="mt-5 grid gap-3" onSubmit={onSubmit}>
           <label className="grid gap-1 text-sm font-bold">
-            Email
+            Name
             <input
               className="rounded-md border border-charcoal/15 bg-white px-3 py-3 text-base font-normal"
-              type="email"
+              type="text"
               value={loginDraft.email}
               onChange={(event) => setLoginDraft({ ...loginDraft, email: event.target.value })}
               required
             />
           </label>
           <label className="grid gap-1 text-sm font-bold">
-            Password or first-time code
+            Password or one-time passcode
             <input
               className="rounded-md border border-charcoal/15 bg-white px-3 py-3 text-base font-normal"
               type="password"
@@ -586,7 +603,7 @@ function AuthScreen({ loginDraft, setLoginDraft, error, onSubmit }) {
           <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">Login</button>
         </form>
         <p className="mt-4 rounded-md bg-gold/20 p-3 text-sm text-charcoal/70">
-          First time here? Use the temporary code your manager gave you. You will be asked to create a password before entering the scheduler.
+          First time here? Enter your name and the one-time passcode your manager gave you. You will create your own password before entering the scheduler.
         </p>
       </section>
     </main>
@@ -719,7 +736,7 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
       <SectionTitle icon={UsersRound} title="Employee list" />
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onSave}>
         <input className="rounded-md border border-charcoal/15 px-3 py-3" placeholder="Name" value={employeeDraft.name} onChange={(event) => setEmployeeDraft({ ...employeeDraft, name: event.target.value })} required />
-        <input className="rounded-md border border-charcoal/15 px-3 py-3" type="email" placeholder="Email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} required />
+        <input className="rounded-md border border-charcoal/15 px-3 py-3" type="email" placeholder="Email optional" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
         <div className="grid grid-cols-2 gap-2">
           <input className="rounded-md border border-charcoal/15 px-3 py-3" placeholder="Position" value={employeeDraft.position} onChange={(event) => setEmployeeDraft({ ...employeeDraft, position: event.target.value })} required />
           <select className="rounded-md border border-charcoal/15 px-3 py-3" value={employeeDraft.role} onChange={(event) => setEmployeeDraft({ ...employeeDraft, role: event.target.value })}>
@@ -727,6 +744,7 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
             <option value="manager">Manager</option>
           </select>
         </div>
+        <input className="rounded-md border border-charcoal/15 px-3 py-3" placeholder="One-time passcode" value={employeeDraft.login_code} onChange={(event) => setEmployeeDraft({ ...employeeDraft, login_code: event.target.value })} required />
         <button className="inline-flex items-center justify-center gap-2 rounded-md bg-teal px-4 py-3 font-bold text-white"><Plus size={18} /> Add employee</button>
       </form>
       <div className="space-y-2">
@@ -736,9 +754,9 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
             <div className="min-w-0 flex-1">
               <p className="font-bold">{employee.name}</p>
               <p className="text-sm text-charcoal/65">{employee.position} - {employee.role}</p>
-              {employee.must_change_password && <p className="text-xs font-bold text-gold">Temporary code required</p>}
+              {employee.must_change_password && <p className="text-xs font-bold text-gold">One-time passcode required</p>}
             </div>
-            <button className="rounded-md bg-teal/10 px-3 py-2 text-sm font-bold text-teal" onClick={() => onResetCode(employee)}>Code</button>
+            <button className="rounded-md bg-teal/10 px-3 py-2 text-sm font-bold text-teal" onClick={() => onResetCode(employee)}>Passcode</button>
             {employee.role !== 'manager' && <button className="rounded-md bg-orange/10 p-2 text-orange" onClick={() => onRemove(employee.id)} aria-label={`Deactivate ${employee.name}`}><Trash2 size={18} /></button>}
           </div>
         ))}
@@ -997,6 +1015,24 @@ function generateLoginCode() {
   crypto.getRandomValues(bytes);
   const code = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
   return `SWG-${code}`;
+}
+
+function buildEmployeeLoginEmail(name, employees) {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '') || 'employee';
+  const existingEmails = new Set(employees.map((employee) => employee.email.toLowerCase()));
+  let candidate = `${base}@sweetwater.local`;
+  let suffix = 2;
+
+  while (existingEmails.has(candidate)) {
+    candidate = `${base}.${suffix}@sweetwater.local`;
+    suffix += 1;
+  }
+
+  return candidate;
 }
 
 async function hashPassword(password, salt) {
