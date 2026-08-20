@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { hasSupabaseConfig, supabase, supabaseConfigError } from './lib/supabase';
+import pdfScheduleUrl from '../employee_work_schedule_polished (1) - Employee Work Schedule (15).pdf?url';
 
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SESSION_KEY = 'sweetwater-auth-user';
@@ -722,8 +723,11 @@ function HomeIntro({ showInstallButton, onInstall }) {
           <p className="text-sm font-semibold text-cream/75">Restaurant Employee Scheduling</p>
         </div>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
         <p className="rounded-md bg-green/20 px-3 py-2 text-sm text-cream">Connected to Supabase</p>
+        <a className="inline-flex items-center justify-center gap-2 rounded-md bg-gold px-3 py-2 text-sm font-black text-charcoal" href={pdfScheduleUrl} target="_blank" rel="noreferrer">
+          <CalendarDays size={17} /> View PDF schedule
+        </a>
         <a className="inline-flex items-center justify-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm font-black text-cream" href="/how-to-guide.html" target="_blank" rel="noreferrer">
           <BookOpen size={17} /> {t('How to use')}
         </a>
