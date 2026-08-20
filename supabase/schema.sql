@@ -28,7 +28,36 @@ create table if not exists shifts (
   end_time time not null,
   station text not null,
   notes text not null default '',
+  publication_status text not null default 'published' check (publication_status in ('draft', 'published')),
+  published_at timestamptz,
   created_at timestamptz not null default now()
+);
+
+alter table shifts add column if not exists publication_status text not null default 'published';
+alter table shifts add column if not exists published_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'shifts_publication_status_check'
+      and conrelid = 'public.shifts'::regclass
+  ) then
+    alter table shifts add constraint shifts_publication_status_check
+      check (publication_status in ('draft', 'published'));
+  end if;
+end;
+$$;
+
+create table if not exists employee_availability (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees(id) on delete cascade,
+  day_of_week integer not null check (day_of_week between 0 and 6),
+  unavailable_start time not null default '00:00',
+  unavailable_end time not null default '23:59',
+  note text not null default '',
+  created_at timestamptz not null default now(),
+  check (unavailable_start < unavailable_end)
 );
 
 create table if not exists time_off_requests (
@@ -110,18 +139,21 @@ for each row execute function enforce_server_for_available_serving_shift();
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on employees to anon, authenticated;
 grant select, insert, update, delete on shifts to anon, authenticated;
+grant select, insert, update, delete on employee_availability to anon, authenticated;
 grant select, insert, update, delete on time_off_requests to anon, authenticated;
 grant select, insert, update, delete on coverage_requests to anon, authenticated;
 grant select, insert, update, delete on notifications to anon, authenticated;
 
 alter table employees enable row level security;
 alter table shifts enable row level security;
+alter table employee_availability enable row level security;
 alter table time_off_requests enable row level security;
 alter table coverage_requests enable row level security;
 alter table notifications enable row level security;
 
 drop policy if exists "scheduler_public_access" on employees;
 drop policy if exists "scheduler_public_access" on shifts;
+drop policy if exists "scheduler_public_access" on employee_availability;
 drop policy if exists "scheduler_public_access" on time_off_requests;
 drop policy if exists "scheduler_public_access" on coverage_requests;
 drop policy if exists "scheduler_public_access" on notifications;
@@ -132,6 +164,11 @@ create policy "scheduler_public_access" on employees
   with check (true);
 
 create policy "scheduler_public_access" on shifts
+  for all to anon, authenticated
+  using (true)
+  with check (true);
+
+create policy "scheduler_public_access" on employee_availability
   for all to anon, authenticated
   using (true)
   with check (true);

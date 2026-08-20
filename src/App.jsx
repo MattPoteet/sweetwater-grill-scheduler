@@ -69,6 +69,7 @@ const emptyData = {
   timeOffRequests: [],
   coverageRequests: [],
   notifications: [],
+  availability: [],
 };
 const emptyShift = { employee_id: '', date: '', start_time: '16:00', end_time: '22:00', station: 'Dining Room', notes: '' };
 
@@ -91,12 +92,14 @@ function SchedulerApp() {
   const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
   const [timeOffDraft, setTimeOffDraft] = useState({ start_date: '', end_date: '', shift_part: 'all_day', reason: '' });
   const [coverageDraft, setCoverageDraft] = useState({ shift_id: '', target_employee_id: 'all' });
+  const [availabilityDraft, setAvailabilityDraft] = useState({ day_of_week: '1', unavailable_start: '00:00', unavailable_end: '23:59', note: '' });
 
   const currentUser = data.employees.find((employee) => employee.id === currentUserId);
   const isManager = currentUser?.role === 'manager';
   const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
-  const visibleShifts = data.shifts
-    .filter((shift) => weekDays.some((day) => day.iso === shift.date))
+  const weekShifts = data.shifts.filter((shift) => weekDays.some((day) => day.iso === shift.date));
+  const visibleShifts = weekShifts
+    .filter((shift) => isManager || shift.publication_status !== 'draft')
     .sort(sortShifts);
   const myShifts = visibleShifts.filter((shift) => shift.employee_id === currentUser?.id);
   const approvedTimeOff = data.timeOffRequests.filter((request) => request.status === 'Approved');
@@ -212,6 +215,8 @@ function SchedulerApp() {
     if (shiftDelete.error) return showActionError(shiftDelete.error);
     const timeOffDelete = await supabase.from('time_off_requests').delete().eq('employee_id', id);
     if (timeOffDelete.error) return showActionError(timeOffDelete.error);
+    const availabilityDelete = await supabase.from('employee_availability').delete().eq('employee_id', id);
+    if (availabilityDelete.error) return showActionError(availabilityDelete.error);
     const coverageDelete = await supabase.from('coverage_requests').delete().or(`requester_id.eq.${id},target_employee_id.eq.${id},accepted_by_id.eq.${id}`);
     if (coverageDelete.error) return showActionError(coverageDelete.error);
     const notificationDelete = await supabase.from('notifications').delete().eq('employee_id', id);
@@ -221,6 +226,7 @@ function SchedulerApp() {
       employees: current.employees.map((employee) => (employee.id === id ? { ...employee, active: false } : employee)),
       shifts: current.shifts.filter((shift) => shift.employee_id !== id),
       timeOffRequests: current.timeOffRequests.filter((request) => request.employee_id !== id),
+      availability: current.availability.filter((item) => item.employee_id !== id),
       coverageRequests: current.coverageRequests.filter((request) => request.requester_id !== id && request.target_employee_id !== id && request.accepted_by_id !== id),
       notifications: current.notifications.filter((note) => note.employee_id !== id),
     }));
@@ -253,6 +259,8 @@ function SchedulerApp() {
 
   const saveShift = async (event) => {
     event.preventDefault();
+    const conflicts = getShiftConflicts(shiftDraft, data, editingShiftId);
+    if (conflicts.length && !window.confirm(`Schedule warning:\n\n${conflicts.join('\n')}\n\nSave this shift anyway?`)) return;
     if (editingShiftId) {
       const { data: updatedShift, error } = await supabase.from('shifts').update(shiftDraft).eq('id', editingShiftId).select('*').single();
       if (error) return showActionError(error);
@@ -262,7 +270,7 @@ function SchedulerApp() {
       }));
       setEditingShiftId(null);
     } else {
-      const { data: newShift, error } = await supabase.from('shifts').insert(shiftDraft).select('*').single();
+      const { data: newShift, error } = await supabase.from('shifts').insert({ ...shiftDraft, publication_status: 'draft', published_at: null }).select('*').single();
       if (error) return showActionError(error);
       setData((current) => ({
         ...current,
@@ -270,6 +278,32 @@ function SchedulerApp() {
       }));
     }
     setShiftDraft(emptyShift);
+  };
+
+  const publishWeek = async () => {
+    const draftIds = weekShifts.filter((shift) => shift.publication_status === 'draft').map((shift) => shift.id);
+    if (!draftIds.length) return window.alert('This week is already published.');
+    const publishedAt = new Date().toISOString();
+    const { data: published, error } = await supabase.from('shifts').update({ publication_status: 'published', published_at: publishedAt }).in('id', draftIds).select('*');
+    if (error) return showActionError(error);
+    setData((current) => ({ ...current, shifts: current.shifts.map((shift) => published.find((item) => item.id === shift.id) || shift) }));
+    const employeeIds = [...new Set(published.map((shift) => shift.employee_id))];
+    await Promise.all(employeeIds.map((id) => addNotification(id, 'Schedule published', `${formatDate(weekDays[0].iso)} - ${formatDate(weekDays[6].iso)} is ready.`)));
+    window.alert('The week was published and scheduled employees were notified.');
+  };
+
+  const saveAvailability = async (event) => {
+    event.preventDefault();
+    const { data: saved, error } = await supabase.from('employee_availability').insert({ employee_id: currentUser.id, ...availabilityDraft, day_of_week: Number(availabilityDraft.day_of_week) }).select('*').single();
+    if (error) return showActionError(error);
+    setData((current) => ({ ...current, availability: [...current.availability, saved] }));
+    setAvailabilityDraft({ day_of_week: '1', unavailable_start: '00:00', unavailable_end: '23:59', note: '' });
+  };
+
+  const deleteAvailability = async (id) => {
+    const { error } = await supabase.from('employee_availability').delete().eq('id', id);
+    if (error) return showActionError(error);
+    setData((current) => ({ ...current, availability: current.availability.filter((item) => item.id !== id) }));
   };
 
   const editShift = (shift) => {
@@ -636,6 +670,8 @@ function SchedulerApp() {
             onSave={saveShift}
             onEdit={editShift}
             onDelete={deleteShift}
+            onPublish={publishWeek}
+            conflicts={getShiftConflicts(shiftDraft, data, editingShiftId)}
             timeOffRequests={approvedTimeOff}
           />
         )}
@@ -690,6 +726,11 @@ function SchedulerApp() {
             setTimeOffDraft={setTimeOffDraft}
             onTimeOffSubmit={submitTimeOff}
             onAcceptCoverage={acceptCoverage}
+            availability={data.availability.filter((item) => item.employee_id === currentUser.id)}
+            availabilityDraft={availabilityDraft}
+            setAvailabilityDraft={setAvailabilityDraft}
+            onAvailabilitySave={saveAvailability}
+            onAvailabilityDelete={deleteAvailability}
           />
         )}
         {activeTab === 'notifications' && (
@@ -996,10 +1037,14 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
 }
 
 function ScheduleBuilder(props) {
-  const { employees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete, timeOffRequests } = props;
+  const { employees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete, onPublish, conflicts, timeOffRequests } = props;
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-charcoal p-3 text-cream shadow-soft">
+        <div><p className="font-black">Draft schedule</p><p className="text-sm text-cream/70">Employees see only published shifts.</p></div>
+        <button className="rounded-md bg-gold px-4 py-2 font-black text-charcoal" onClick={onPublish}>Publish week</button>
+      </div>
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onSave}>
         <SectionTitle icon={Clock} title={editingShiftId ? 'Edit shift' : 'Create shift'} />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={shiftDraft.employee_id} onChange={(event) => setShiftDraft({ ...shiftDraft, employee_id: event.target.value })} required>
@@ -1013,6 +1058,7 @@ function ScheduleBuilder(props) {
         </div>
         <input className="rounded-md border border-charcoal/15 px-3 py-3" placeholder="Station" value={shiftDraft.station} onChange={(event) => setShiftDraft({ ...shiftDraft, station: event.target.value })} required />
         <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder="Notes" value={shiftDraft.notes} onChange={(event) => setShiftDraft({ ...shiftDraft, notes: event.target.value })} />
+        {conflicts.length > 0 && <div className="rounded-md border border-orange/30 bg-orange/10 p-3"><p className="font-black text-orange">Schedule warnings</p>{conflicts.map((conflict) => <p key={conflict} className="mt-1 text-sm text-charcoal/70">• {conflict}</p>)}</div>}
         <button className="inline-flex items-center justify-center gap-2 rounded-md bg-green px-4 py-3 font-bold text-white"><Check size={18} /> {editingShiftId ? 'Save shift' : 'Create shift'}</button>
       </form>
       <ScheduleList employees={employees} shifts={shifts} weekDays={weekDays} timeOffRequests={timeOffRequests} onEdit={onEdit} onDelete={onDelete} />
@@ -1185,7 +1231,7 @@ function WeekCalendar({ employees, shifts, weekDays, timeOffRequests = [] }) {
   );
 }
 
-function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffRequests, coverageRequests, timeOffDraft, setTimeOffDraft, onTimeOffSubmit, onAcceptCoverage }) {
+function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffRequests, coverageRequests, timeOffDraft, setTimeOffDraft, onTimeOffSubmit, onAcceptCoverage, availability, availabilityDraft, setAvailabilityDraft, onAvailabilitySave, onAvailabilityDelete }) {
   const { t } = useLanguage();
   const openCoverage = coverageRequests.filter((request) => request.status === 'Pending' && !request.accepted_by_id && request.requester_id !== currentUser.id && (!request.target_employee_id || request.target_employee_id === currentUser.id));
   const myRequests = [...timeOffRequests.filter((request) => request.employee_id === currentUser.id), ...coverageRequests.filter((request) => request.requester_id === currentUser.id || request.accepted_by_id === currentUser.id)];
@@ -1205,6 +1251,7 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
         <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder={t('Reason')} value={timeOffDraft.reason} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, reason: event.target.value })} required />
         <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">{t('Send request')}</button>
       </form>
+      <AvailabilityEditor availability={availability} draft={availabilityDraft} setDraft={setAvailabilityDraft} onSave={onAvailabilitySave} onDelete={onAvailabilityDelete} />
       <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <SectionTitle icon={Send} title="Coverage available" />
       <div className="space-y-2">
@@ -1231,6 +1278,28 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
         {myRequests.length === 0 && <EmptyState text="No requests yet." />}
       </div>
     </div>
+  );
+}
+
+function AvailabilityEditor({ availability, draft, setDraft, onSave, onDelete }) {
+  return (
+    <section className="space-y-3 rounded-lg bg-paper p-3 shadow-soft">
+      <SectionTitle icon={Clock} title="Recurring unavailability" />
+      <p className="text-sm text-charcoal/65">Add the weekly times you normally cannot work. Managers will see a warning before scheduling you.</p>
+      <form className="grid gap-2 sm:grid-cols-4" onSubmit={onSave}>
+        <select className="rounded-md border border-charcoal/15 bg-white px-3 py-3" value={draft.day_of_week} onChange={(event) => setDraft({ ...draft, day_of_week: event.target.value })}>
+          {dayNames.map((day, index) => <option key={day} value={index}>{day}</option>)}
+        </select>
+        <input className="rounded-md border border-charcoal/15 px-3 py-3" type="time" value={draft.unavailable_start} onChange={(event) => setDraft({ ...draft, unavailable_start: event.target.value })} required />
+        <input className="rounded-md border border-charcoal/15 px-3 py-3" type="time" value={draft.unavailable_end} onChange={(event) => setDraft({ ...draft, unavailable_end: event.target.value })} required />
+        <button className="rounded-md bg-teal px-3 py-3 font-bold text-white">Add</button>
+        <input className="rounded-md border border-charcoal/15 px-3 py-3 sm:col-span-4" placeholder="Note (class, childcare, etc.)" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} />
+      </form>
+      <div className="space-y-2">
+        {availability.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-md bg-cream p-3"><p className="min-w-0 flex-1 text-sm font-bold">{dayNames[item.day_of_week]} · {formatTime(item.unavailable_start)}-{formatTime(item.unavailable_end)}{item.note ? ` · ${item.note}` : ''}</p><button className="text-orange" onClick={() => onDelete(item.id)} aria-label="Delete availability"><Trash2 size={17} /></button></div>)}
+        {availability.length === 0 && <p className="text-sm text-charcoal/55">No recurring unavailability entered.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -1275,6 +1344,7 @@ function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], cover
                     <div className="min-w-0 flex-1">
                       <p className="font-bold">{nameFor(employees, shift.employee_id)}</p>
                       <p className="text-sm text-charcoal/65">{formatTimeRange(shift)} - {shift.station}</p>
+                      {shift.publication_status === 'draft' && <p className="mt-1 inline-flex rounded-full bg-gold/20 px-2 py-0.5 text-xs font-black text-charcoal">Draft</p>}
                       {displayShiftNote(shift) && <p className="mt-1 text-sm text-charcoal/55">{displayShiftNote(shift)}</p>}
                     </div>
                     {onEdit && (
@@ -1438,15 +1508,16 @@ async function hashPassword(password, salt) {
 }
 
 async function loadFromSupabase() {
-  const [employeesResult, shiftsResult, timeOffResult, coverageResult, notificationsResult] = await Promise.all([
+  const [employeesResult, shiftsResult, timeOffResult, coverageResult, notificationsResult, availabilityResult] = await Promise.all([
     supabase.from('employees').select('*').order('name'),
     supabase.from('shifts').select('*').order('date'),
     supabase.from('time_off_requests').select('*').order('created_at', { ascending: false }),
     supabase.from('coverage_requests').select('*').order('created_at', { ascending: false }),
     supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+    supabase.from('employee_availability').select('*').order('day_of_week'),
   ]);
 
-  const error = employeesResult.error || shiftsResult.error || timeOffResult.error || coverageResult.error || notificationsResult.error;
+  const error = employeesResult.error || shiftsResult.error || timeOffResult.error || coverageResult.error || notificationsResult.error || availabilityResult.error;
   if (error) throw error;
 
   return {
@@ -1455,6 +1526,7 @@ async function loadFromSupabase() {
     timeOffRequests: timeOffResult.data || [],
     coverageRequests: coverageResult.data || [],
     notifications: notificationsResult.data || [],
+    availability: availabilityResult.data || [],
   };
 }
 
@@ -1623,6 +1695,37 @@ function fromIsoDate(value) {
 
 function dateIsInRange(date, startDate, endDate) {
   return Boolean(date && startDate && endDate && date >= startDate && date <= endDate);
+}
+
+function getShiftConflicts(draft, data, editingShiftId) {
+  if (!draft.employee_id || !draft.date || !draft.start_time || !draft.end_time) return [];
+  const employee = data.employees.find((item) => item.id === draft.employee_id);
+  const conflicts = [];
+  const overlap = data.shifts.find((shift) => shift.id !== editingShiftId
+    && shift.employee_id === draft.employee_id
+    && shift.date === draft.date
+    && timesOverlap(draft.start_time, draft.end_time, shift.start_time, shift.end_time));
+  if (overlap) conflicts.push(`${employee?.name || 'Employee'} already has ${formatTimeRange(overlap)} on this date.`);
+
+  const timeOff = data.timeOffRequests.find((request) => request.employee_id === draft.employee_id
+    && request.status === 'Approved'
+    && dateIsInRange(draft.date, request.start_date, request.end_date)
+    && (request.shift_part === 'all_day'
+      || !request.shift_part
+      || (request.shift_part === 'opening' && draft.start_time < '15:00')
+      || (request.shift_part === 'closing' && draft.end_time > '15:00')));
+  if (timeOff) conflicts.push(`${employee?.name || 'Employee'} has approved ${timeOffPartLabel(timeOff).toLowerCase()} time off.`);
+
+  const dayOfWeek = fromIsoDate(draft.date).getDay();
+  const unavailable = data.availability.find((item) => item.employee_id === draft.employee_id
+    && item.day_of_week === dayOfWeek
+    && timesOverlap(draft.start_time, draft.end_time, item.unavailable_start, item.unavailable_end));
+  if (unavailable) conflicts.push(`${employee?.name || 'Employee'} is unavailable ${formatTime(unavailable.unavailable_start)}-${formatTime(unavailable.unavailable_end)}${unavailable.note ? ` (${unavailable.note})` : ''}.`);
+  return conflicts;
+}
+
+function timesOverlap(startA, endA, startB, endB) {
+  return startA.slice(0, 5) < endB.slice(0, 5) && endA.slice(0, 5) > startB.slice(0, 5);
 }
 
 function timeOffPartLabel(request) {
