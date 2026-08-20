@@ -661,6 +661,16 @@ function SchedulerApp() {
             timeOffRequests={approvedTimeOff}
           />
         )}
+        {activeTab === 'pdfSchedule' && (
+          <PdfSchedulePanel
+            employees={data.employees}
+            shifts={visibleShifts}
+            weekDays={weekDays}
+            weekOffset={weekOffset}
+            setWeekOffset={setWeekOffset}
+            timeOffRequests={approvedTimeOff}
+          />
+        )}
         {activeTab === 'requests' && (
           <RequestsPanel
             currentUser={currentUser}
@@ -681,13 +691,14 @@ function SchedulerApp() {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-charcoal/10 bg-paper/95 px-2 py-2 shadow-soft backdrop-blur safe-bottom">
-        <div className="mx-auto grid max-w-5xl grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-5xl grid-cols-6 gap-1">
           {isManager ? (
             <>
               <NavButton icon={ShieldCheck} label="Home" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
               <NavButton icon={UsersRound} label="Staff" active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} />
               <NavButton icon={CalendarDays} label="Build" active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} />
               <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
+              <NavButton icon={BookOpen} label="PDF" active={activeTab === 'pdfSchedule'} onClick={() => setActiveTab('pdfSchedule')} />
             </>
           ) : (
             <>
@@ -695,6 +706,7 @@ function SchedulerApp() {
               <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
               <NavButton icon={UsersRound} label="Team" active={activeTab === 'teamSchedule'} onClick={() => setActiveTab('teamSchedule')} />
               <NavButton icon={Send} label="Ask" active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} />
+              <NavButton icon={BookOpen} label="PDF" active={activeTab === 'pdfSchedule'} onClick={() => setActiveTab('pdfSchedule')} />
             </>
           )}
           <NavButton icon={LogOut} label="Logout" active={false} onClick={handleLogout} />
@@ -1093,6 +1105,46 @@ function CalendarPanel({ employees, shifts, weekDays, weekOffset, setWeekOffset,
   );
 }
 
+function PdfSchedulePanel({ employees, shifts, weekDays, weekOffset, setWeekOffset, timeOffRequests }) {
+  const [pdfUrl, setPdfUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    let nextUrl = '';
+    setPdfUrl('');
+    buildSchedulePdf(employees, shifts, weekDays, timeOffRequests).then((document) => {
+      if (!active) return;
+      nextUrl = URL.createObjectURL(document.output('blob'));
+      setPdfUrl(nextUrl);
+    });
+    return () => {
+      active = false;
+      if (nextUrl) URL.revokeObjectURL(nextUrl);
+    };
+  }, [employees, shifts, weekDays, timeOffRequests]);
+
+  const fileName = `sweetwater-schedule-${weekDays[0].iso}-to-${weekDays[6].iso}.pdf`;
+  return (
+    <div className="space-y-4">
+      <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle icon={BookOpen} title="Live PDF schedule" />
+        {pdfUrl && (
+          <a className="inline-flex items-center gap-2 rounded-md bg-teal px-3 py-2 text-sm font-bold text-white" href={pdfUrl} download={fileName}>
+            <Download size={17} /> Download PDF
+          </a>
+        )}
+      </div>
+      <p className="rounded-md bg-gold/15 p-3 text-sm font-semibold text-charcoal/70">This PDF updates automatically when shifts or the selected week change.</p>
+      {pdfUrl ? (
+        <iframe className="h-[70vh] min-h-[34rem] w-full rounded-lg border border-charcoal/10 bg-white shadow-soft" src={pdfUrl} title="Sweetwater Grill live PDF schedule" />
+      ) : (
+        <div className="grid min-h-80 place-items-center rounded-lg bg-paper shadow-soft">Building PDF schedule...</div>
+      )}
+    </div>
+  );
+}
+
 function WeekCalendar({ employees, shifts, weekDays, timeOffRequests = [] }) {
   const { t } = useLanguage();
   return (
@@ -1471,6 +1523,52 @@ function isScheduleTimeLabel(value) {
 
 function displayShiftNote(shift) {
   return isScheduleTimeLabel(shift.notes) ? '' : shift.notes;
+}
+
+async function buildSchedulePdf(employees, shifts, weekDays, timeOffRequests) {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const document = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  document.setProperties({ title: `Sweetwater Grill Schedule ${weekDays[0].iso} - ${weekDays[6].iso}` });
+  document.setFontSize(18);
+  document.setFont('helvetica', 'bold');
+  document.text('Sweetwater Grill Employee Work Schedule', 36, 38);
+  document.setFontSize(10);
+  document.setFont('helvetica', 'normal');
+  document.text(`Week of ${formatDate(weekDays[0].iso)} - ${formatDate(weekDays[6].iso)}`, 36, 56);
+
+  const scheduledEmployees = employees
+    .filter((employee) => employee.active && !isOpenShiftEmployee(employee))
+    .sort((a, b) => (a.role === 'manager' ? -1 : b.role === 'manager' ? 1 : a.name.localeCompare(b.name)));
+  const head = [['Employee', ...weekDays.map((day) => `${dayNames[day.date.getDay()]} - ${formatDate(day.iso)}`)]];
+  const body = scheduledEmployees.map((employee) => [
+    `${employee.name}\n${employee.position}`,
+    ...weekDays.map((day) => {
+      const employeeShifts = shifts.filter((shift) => shift.employee_id === employee.id && shift.date === day.iso);
+      const employeeTimeOff = timeOffRequests.filter((request) => request.employee_id === employee.id && dateIsInRange(day.iso, request.start_date, request.end_date));
+      const shiftText = employeeShifts.map((shift) => formatTimeRange(shift)).join('\n');
+      const timeOffText = employeeTimeOff.map((request) => `${timeOffPartLabel(request)} off`).join('\n');
+      if (shiftText && timeOffText) return `${shiftText}\n${timeOffText}`;
+      return shiftText || timeOffText || 'OFF';
+    }),
+  ]);
+
+  autoTable(document, {
+    head,
+    body,
+    startY: 68,
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 4, halign: 'center', valign: 'middle', overflow: 'linebreak' },
+    headStyles: { fillColor: [20, 32, 31], textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: { 0: { halign: 'left', cellWidth: 95, fontStyle: 'bold' } },
+    margin: { left: 24, right: 24 },
+    didDrawPage: () => {
+      document.setFontSize(7);
+      document.setTextColor(90);
+      document.text('Live schedule generated by Sweetwater Grill Scheduler', 36, document.internal.pageSize.height - 16);
+    },
+  });
+
+  return document;
 }
 
 function getInitialWeekOffsetFromShifts(shifts) {
