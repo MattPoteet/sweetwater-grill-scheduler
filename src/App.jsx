@@ -1384,15 +1384,20 @@ function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], cover
                         <button className="grid h-9 w-9 place-items-center rounded-md bg-orange/10 text-orange" onClick={() => onDelete(shift.id)} aria-label="Delete shift"><Trash2 size={17} /></button>
                       </div>
                     )}
-                    {onFindCoverage && (
-                      <button
-                        className="shrink-0 rounded-md bg-gold px-3 py-2 text-sm font-bold text-charcoal disabled:opacity-45"
-                        disabled={coverageRequests.some((request) => request.shift_id === shift.id && request.status === 'Pending')}
-                        onClick={() => onFindCoverage(shift.id, 'all')}
-                      >
-                        {coverageRequests.some((request) => request.shift_id === shift.id && request.status === 'Pending') ? 'Coverage requested' : 'Find coverage'}
-                      </button>
-                    )}
+                    {onFindCoverage && (() => {
+                      const coveragePending = coverageRequests.some((request) => request.shift_id === shift.id && request.status === 'Pending');
+                      if (coveragePending) return <button className="shrink-0 rounded-md bg-gold px-3 py-2 text-sm font-bold text-charcoal opacity-45" disabled>Coverage requested</button>;
+                      if (isOpenToCloseShift(shift)) {
+                        return (
+                          <div className="flex shrink-0 flex-col gap-1" aria-label="Choose coverage hours">
+                            <button className="rounded-md bg-gold px-3 py-1.5 text-xs font-bold text-charcoal" onClick={() => onFindCoverage(shift.id, 'all', 'open_to_3')}>Open-3</button>
+                            <button className="rounded-md bg-gold px-3 py-1.5 text-xs font-bold text-charcoal" onClick={() => onFindCoverage(shift.id, 'all', '3_to_close')}>3-Close</button>
+                            <button className="rounded-md bg-gold px-3 py-1.5 text-xs font-bold text-charcoal" onClick={() => onFindCoverage(shift.id, 'all', 'entire')}>Open-Close</button>
+                          </div>
+                        );
+                      }
+                      return <button className="shrink-0 rounded-md bg-gold px-3 py-2 text-sm font-bold text-charcoal" onClick={() => onFindCoverage(shift.id, 'all')}>Find coverage</button>;
+                    })()}
                   </div>
                 </div>
               ))}
