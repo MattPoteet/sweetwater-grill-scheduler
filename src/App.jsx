@@ -91,7 +91,7 @@ function SchedulerApp() {
   const [editingShiftId, setEditingShiftId] = useState(null);
   const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
   const [timeOffDraft, setTimeOffDraft] = useState({ start_date: '', end_date: '', shift_part: 'all_day', reason: '' });
-  const [coverageDraft, setCoverageDraft] = useState({ shift_id: '', target_employee_id: 'all' });
+  const [coverageDraft, setCoverageDraft] = useState({ shift_id: '', target_employee_id: 'all', shift_part: 'entire' });
   const [availabilityDraft, setAvailabilityDraft] = useState({ day_of_week: '1', unavailable_start: '00:00', unavailable_end: '23:59', note: '' });
 
   const currentUser = data.employees.find((employee) => employee.id === currentUserId);
@@ -344,12 +344,13 @@ function SchedulerApp() {
 
   const submitCoverage = async (event) => {
     event.preventDefault();
-    await createCoverageRequest(coverageDraft.shift_id, coverageDraft.target_employee_id);
+    await createCoverageRequest(coverageDraft.shift_id, coverageDraft.target_employee_id, coverageDraft.shift_part);
   };
 
-  const createCoverageRequest = async (shiftId, targetEmployeeId = 'all') => {
+  const createCoverageRequest = async (shiftId, targetEmployeeId = 'all', shiftPart = 'entire') => {
     const shift = data.shifts.find((item) => item.id === shiftId);
     if (!shift) return showActionError(new Error('Select a shift before requesting coverage.'));
+    if (shiftPart !== 'entire' && !isOpenToCloseShift(shift)) return showActionError(new Error('Partial coverage is only available for open-to-close shifts.'));
     const existingRequest = data.coverageRequests.find((request) => request.shift_id === shiftId && request.requester_id === currentUser.id && request.status === 'Pending');
     if (existingRequest) return showActionError(new Error('Coverage has already been requested for this shift.'));
     const targetId = targetEmployeeId === 'all' ? null : targetEmployeeId;
@@ -360,13 +361,15 @@ function SchedulerApp() {
       accepted_by_id: null,
       status: 'Pending',
       manager_note: '',
+      coverage_start_time: shiftPart === 'open_to_3' ? shift.start_time : shiftPart === '3_to_close' ? '15:00' : shift.start_time,
+      coverage_end_time: shiftPart === 'open_to_3' ? '15:00' : shift.end_time,
     }).select('*').single();
     if (error) return showActionError(error);
     setData((current) => ({ ...current, coverageRequests: [request, ...current.coverageRequests] }));
     const recipients = targetId ? [targetId] : data.employees.filter((employee) => employee.role === 'employee' && employee.id !== currentUser.id && !isOpenShiftEmployee(employee)).map((employee) => employee.id);
-    await Promise.all(recipients.map((id) => addNotification(id, 'Coverage requested', `${currentUser.name} needs coverage for ${formatDate(shift.date)} ${shift.start_time}.`)));
+    await Promise.all(recipients.map((id) => addNotification(id, 'Coverage requested', `${currentUser.name} needs coverage for ${formatDate(shift.date)} ${coverageTimeRange(request, shift)}.`)));
     await notifyManagers('Coverage request started', `${currentUser.name} requested shift coverage.`);
-    setCoverageDraft({ shift_id: '', target_employee_id: 'all' });
+    setCoverageDraft({ shift_id: '', target_employee_id: 'all', shift_part: 'entire' });
   };
 
   const acceptCoverage = async (requestId) => {
@@ -405,7 +408,26 @@ function SchedulerApp() {
     if (error) return showActionError(error);
     let updatedShift = shift;
     let mergedShiftIds = [];
-    if (status === 'Approved' && request.accepted_by_id) {
+    let addedShift = null;
+    const isPartialCoverage = request.coverage_start_time && request.coverage_end_time
+      && (request.coverage_start_time.slice(0, 5) !== shift.start_time.slice(0, 5) || request.coverage_end_time.slice(0, 5) !== shift.end_time.slice(0, 5));
+    if (status === 'Approved' && request.accepted_by_id && isPartialCoverage) {
+      const coversOpening = request.coverage_start_time.slice(0, 5) === shift.start_time.slice(0, 5);
+      const remainingShift = coversOpening
+        ? { start_time: request.coverage_end_time, end_time: shift.end_time, notes: scheduleLabelForTimes(request.coverage_end_time, shift.end_time) }
+        : { start_time: shift.start_time, end_time: request.coverage_start_time, notes: scheduleLabelForTimes(shift.start_time, request.coverage_start_time) };
+      const shiftResult = await supabase.from('shifts').update(remainingShift).eq('id', request.shift_id).select('*').single();
+      if (shiftResult.error) return showActionError(shiftResult.error);
+      updatedShift = shiftResult.data;
+      const coveredResult = await supabase.from('shifts').insert({
+        employee_id: request.accepted_by_id, date: shift.date,
+        start_time: request.coverage_start_time, end_time: request.coverage_end_time,
+        station: shift.station, notes: scheduleLabelForTimes(request.coverage_start_time, request.coverage_end_time),
+        publication_status: shift.publication_status, published_at: shift.published_at,
+      }).select('*').single();
+      if (coveredResult.error) return showActionError(coveredResult.error);
+      addedShift = coveredResult.data;
+    } else if (status === 'Approved' && request.accepted_by_id) {
       const sameDayShifts = data.shifts.filter((item) => item.id !== request.shift_id
         && item.employee_id === request.accepted_by_id
         && item.date === shift.date);
@@ -427,6 +449,7 @@ function SchedulerApp() {
         ? current.shifts
           .filter((item) => !mergedShiftIds.includes(item.id))
           .map((item) => (item.id === request.shift_id ? updatedShift : item))
+          .concat(addedShift ? [addedShift] : [])
         : current.shifts,
       coverageRequests: current.coverageRequests.map((item) => {
         if (item.id === requestId) return updatedRequest;
@@ -968,7 +991,7 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
             <ApprovalItem
               key={request.id}
               title={isOpenShiftRequest ? `${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'Someone'} asked for an available shift` : `${nameFor(employees, request.requester_id)} requested coverage`}
-              detail={`${shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)}` : 'Shift'} accepted by ${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'no one yet'}`}
+              detail={`${shift ? `${formatDate(shift.date)} ${coverageTimeRange(request, shift)}` : 'Shift'} accepted by ${request.accepted_by_id ? nameFor(employees, request.accepted_by_id) : 'no one yet'}`}
               disabled={!request.accepted_by_id}
               onApprove={() => onApproveCoverage(request.id, 'Approved')}
               onDeny={() => onApproveCoverage(request.id, 'Denied')}
@@ -1069,6 +1092,7 @@ function ScheduleBuilder(props) {
 function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onFindCoverage, onAcceptCoverage, timeOffRequests }) {
   const { t } = useLanguage();
   const eligible = employees.filter((employee) => employee.role === 'employee' && employee.active && employee.id !== currentUser.id && !isOpenShiftEmployee(employee));
+  const selectedCoverageShift = myShifts.find((shift) => shift.id === coverageDraft.shift_id);
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
@@ -1077,10 +1101,17 @@ function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, 
       <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onCoverageSubmit}>
         <SectionTitle icon={Send} title="Request coverage" />
-        <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_id: event.target.value })} required>
+        <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_id: event.target.value, shift_part: 'entire' })} required>
           <option value="">{t('Select your shift')}</option>
           {myShifts.map((shift) => <option key={shift.id} value={shift.id}>{formatDate(shift.date)} {formatTimeRange(shift)} {shift.station}</option>)}
         </select>
+        {isOpenToCloseShift(selectedCoverageShift) && (
+          <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.shift_part} onChange={(event) => setCoverageDraft({ ...coverageDraft, shift_part: event.target.value })}>
+            <option value="open_to_3">Open-3</option>
+            <option value="3_to_close">3-Close</option>
+            <option value="entire">Entire shift</option>
+          </select>
+        )}
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={coverageDraft.target_employee_id} onChange={(event) => setCoverageDraft({ ...coverageDraft, target_employee_id: event.target.value })}>
           <option value="all">{t('Send to all eligible employees')}</option>
           {eligible.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
@@ -1260,7 +1291,7 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
           return (
             <div key={request.id} className="rounded-lg bg-paper p-3 shadow-soft">
               <p className="font-bold">{nameFor(employees, request.requester_id)} needs coverage</p>
-              <p className="text-sm text-charcoal/65">{shift ? `${formatDate(shift.date)} ${formatTimeRange(shift)} ${shift.station}` : 'Shift unavailable'}</p>
+              <p className="text-sm text-charcoal/65">{shift ? `${formatDate(shift.date)} ${coverageTimeRange(request, shift)} ${shift.station}` : 'Shift unavailable'}</p>
               <button className="mt-3 rounded-md bg-green px-4 py-2 font-bold text-white" onClick={() => onAcceptCoverage(request.id)}>{t('Accept')}</button>
             </div>
           );
@@ -1603,6 +1634,15 @@ function formatTimeRange(shift) {
   }
 
   return `${formatTime(shift.start_time)}-${formatTime(shift.end_time)}`;
+}
+
+function isOpenToCloseShift(shift) {
+  return Boolean(shift && shift.start_time?.slice(0, 5) === '10:00' && shift.end_time?.slice(0, 5) === '22:00');
+}
+
+function coverageTimeRange(request, shift) {
+  if (!request?.coverage_start_time || !request?.coverage_end_time) return formatTimeRange(shift);
+  return `${formatTime(request.coverage_start_time)}-${formatTime(request.coverage_end_time)}`;
 }
 
 function isScheduleTimeLabel(value) {

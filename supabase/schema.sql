@@ -97,8 +97,13 @@ create table if not exists coverage_requests (
   accepted_by_id uuid references employees(id) on delete set null,
   status text not null default 'Pending' check (status in ('Pending', 'Approved', 'Denied')),
   manager_note text not null default '',
+  coverage_start_time time,
+  coverage_end_time time,
   created_at timestamptz not null default now()
 );
+
+alter table coverage_requests add column if not exists coverage_start_time time;
+alter table coverage_requests add column if not exists coverage_end_time time;
 
 create table if not exists notifications (
   id uuid primary key default gen_random_uuid(),
