@@ -310,11 +310,17 @@ function SchedulerApp() {
 
   const submitCoverage = async (event) => {
     event.preventDefault();
-    const shift = data.shifts.find((item) => item.id === coverageDraft.shift_id);
+    await createCoverageRequest(coverageDraft.shift_id, coverageDraft.target_employee_id);
+  };
+
+  const createCoverageRequest = async (shiftId, targetEmployeeId = 'all') => {
+    const shift = data.shifts.find((item) => item.id === shiftId);
     if (!shift) return showActionError(new Error('Select a shift before requesting coverage.'));
-    const targetId = coverageDraft.target_employee_id === 'all' ? null : coverageDraft.target_employee_id;
+    const existingRequest = data.coverageRequests.find((request) => request.shift_id === shiftId && request.requester_id === currentUser.id && request.status === 'Pending');
+    if (existingRequest) return showActionError(new Error('Coverage has already been requested for this shift.'));
+    const targetId = targetEmployeeId === 'all' ? null : targetEmployeeId;
     const { data: request, error } = await supabase.from('coverage_requests').insert({
-      shift_id: coverageDraft.shift_id,
+      shift_id: shiftId,
       requester_id: currentUser.id,
       target_employee_id: targetId,
       accepted_by_id: null,
@@ -646,6 +652,7 @@ function SchedulerApp() {
             setCoverageDraft={setCoverageDraft}
             onCoverageSubmit={submitCoverage}
             coverageRequests={data.coverageRequests}
+            onFindCoverage={createCoverageRequest}
             onAcceptCoverage={acceptCoverage}
             timeOffRequests={approvedTimeOff.filter((request) => request.employee_id === currentUser.id)}
           />
@@ -1013,14 +1020,14 @@ function ScheduleBuilder(props) {
   );
 }
 
-function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onAcceptCoverage, timeOffRequests }) {
+function EmployeeSchedule({ currentUser, employees, shifts, myShifts, weekDays, weekOffset, setWeekOffset, coverageDraft, setCoverageDraft, onCoverageSubmit, coverageRequests, onFindCoverage, onAcceptCoverage, timeOffRequests }) {
   const { t } = useLanguage();
   const eligible = employees.filter((employee) => employee.role === 'employee' && employee.active && employee.id !== currentUser.id && !isOpenShiftEmployee(employee));
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
       <SectionTitle icon={UserRound} title={t('My schedule')} />
-      <ScheduleList employees={employees} shifts={myShifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
+      <ScheduleList employees={employees} shifts={myShifts} weekDays={weekDays} timeOffRequests={timeOffRequests} coverageRequests={coverageRequests} onFindCoverage={onFindCoverage} />
       <OpenShiftList currentUser={currentUser} employees={employees} shifts={shifts} coverageRequests={coverageRequests} weekDays={weekDays} onRequest={onAcceptCoverage} />
       <form className="grid gap-2 rounded-lg bg-paper p-3 shadow-soft" onSubmit={onCoverageSubmit}>
         <SectionTitle icon={Send} title="Request coverage" />
@@ -1247,7 +1254,7 @@ function NotificationsPanel({ notifications, onRead }) {
   );
 }
 
-function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], onEdit, onDelete }) {
+function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], coverageRequests = [], onEdit, onDelete, onFindCoverage }) {
   const { t } = useLanguage();
   return (
     <div className="space-y-2">
@@ -1275,6 +1282,15 @@ function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], onEdi
                         <button className="h-9 rounded-md bg-gold/15 px-3 text-sm font-bold text-charcoal" onClick={() => onEdit(shift)}>Edit</button>
                         <button className="grid h-9 w-9 place-items-center rounded-md bg-orange/10 text-orange" onClick={() => onDelete(shift.id)} aria-label="Delete shift"><Trash2 size={17} /></button>
                       </div>
+                    )}
+                    {onFindCoverage && (
+                      <button
+                        className="shrink-0 rounded-md bg-gold px-3 py-2 text-sm font-bold text-charcoal disabled:opacity-45"
+                        disabled={coverageRequests.some((request) => request.shift_id === shift.id && request.status === 'Pending')}
+                        onClick={() => onFindCoverage(shift.id, 'all')}
+                      >
+                        {coverageRequests.some((request) => request.shift_id === shift.id && request.status === 'Pending') ? 'Coverage requested' : 'Find coverage'}
+                      </button>
                     )}
                   </div>
                 </div>
