@@ -89,7 +89,7 @@ function SchedulerApp() {
   const [shiftDraft, setShiftDraft] = useState(emptyShift);
   const [editingShiftId, setEditingShiftId] = useState(null);
   const [employeeDraft, setEmployeeDraft] = useState({ name: '', email: '', position: 'Server', role: 'employee', login_code: '' });
-  const [timeOffDraft, setTimeOffDraft] = useState({ start_date: '', end_date: '', reason: '' });
+  const [timeOffDraft, setTimeOffDraft] = useState({ start_date: '', end_date: '', shift_part: 'all_day', reason: '' });
   const [coverageDraft, setCoverageDraft] = useState({ shift_id: '', target_employee_id: 'all' });
 
   const currentUser = data.employees.find((employee) => employee.id === currentUserId);
@@ -304,8 +304,8 @@ function SchedulerApp() {
       .single();
     if (error) return showActionError(error);
     setData((current) => ({ ...current, timeOffRequests: [request, ...current.timeOffRequests] }));
-    await notifyManagers('Time-off request pending', `${currentUser.name} requested ${formatDate(request.start_date)} off.`);
-    setTimeOffDraft({ start_date: '', end_date: '', reason: '' });
+    await notifyManagers('Time-off request pending', `${currentUser.name} requested ${formatDate(request.start_date)} off (${timeOffPartLabel(request)}).`);
+    setTimeOffDraft({ start_date: '', end_date: '', shift_part: 'all_day', reason: '' });
   };
 
   const submitCoverage = async (event) => {
@@ -355,7 +355,7 @@ function SchedulerApp() {
       ...current,
       timeOffRequests: current.timeOffRequests.map((item) => (item.id === requestId ? updatedRequest : item)),
     }));
-    await addNotification(request.employee_id, `Time off ${status.toLowerCase()}`, `Your request for ${formatDate(request.start_date)} is ${status.toLowerCase()}.`);
+    await addNotification(request.employee_id, `Time off ${status.toLowerCase()}`, `Your ${timeOffPartLabel(request).toLowerCase()} request for ${formatDate(request.start_date)} is ${status.toLowerCase()}.`);
   };
 
   const decideCoverage = async (requestId, status) => {
@@ -899,7 +899,7 @@ function ApprovalScreen({ employees, shifts, timeOffRequests, coverageRequests, 
       <SectionTitle icon={ShieldCheck} title="Manager approvals" light />
       <div className="space-y-3">
         {timeOffRequests.map((request) => (
-          <ApprovalItem key={request.id} title={`${nameFor(employees, request.employee_id)} wants time off`} detail={`${formatDate(request.start_date)} to ${formatDate(request.end_date)} - ${request.reason}`} onApprove={() => onApproveTimeOff(request.id, 'Approved')} onDeny={() => onApproveTimeOff(request.id, 'Denied')} />
+          <ApprovalItem key={request.id} title={`${nameFor(employees, request.employee_id)} wants time off`} detail={`${formatDate(request.start_date)} to ${formatDate(request.end_date)} · ${timeOffPartLabel(request)}${request.reason ? ` · ${request.reason}` : ''}`} onApprove={() => onApproveTimeOff(request.id, 'Approved')} onDeny={() => onApproveTimeOff(request.id, 'Denied')} />
         ))}
         {coverageRequests.map((request) => {
           const shift = shifts.find((item) => item.id === request.shift_id);
@@ -1115,7 +1115,7 @@ function WeekCalendar({ employees, shifts, weekDays, timeOffRequests = [] }) {
                     <p className="truncate text-xs text-charcoal/60">{shift.station}</p>
                   </div>
                 ))}
-                {dayTimeOff.map((request) => <div key={`off-${request.id}`} className="rounded-md bg-orange/10 p-2"><p className="truncate text-sm font-black text-charcoal">{nameFor(employees, request.employee_id)}</p><p className="text-xs font-bold text-orange">{t('Time off')}</p></div>)}
+                {dayTimeOff.map((request) => <div key={`off-${request.id}`} className="rounded-md bg-orange/10 p-2"><p className="truncate text-sm font-black text-charcoal">{nameFor(employees, request.employee_id)}</p><p className="text-xs font-bold text-orange">{t('Time off')} · {timeOffPartLabel(request)}</p></div>)}
                 {dayShifts.length === 0 && dayTimeOff.length === 0 && <p className="rounded-md bg-cream p-2 text-xs text-charcoal/55">{t('No shifts')}</p>}
               </div>
             </div>
@@ -1138,6 +1138,11 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={timeOffDraft.start_date} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, start_date: event.target.value })} required />
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={timeOffDraft.end_date} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, end_date: event.target.value })} required />
         </div>
+        <select className="rounded-md border border-charcoal/15 bg-white px-3 py-3" value={timeOffDraft.shift_part} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, shift_part: event.target.value })} required>
+          <option value="opening">Opening shift off</option>
+          <option value="closing">Closing shift off</option>
+          <option value="all_day">All day off</option>
+        </select>
         <textarea className="min-h-20 rounded-md border border-charcoal/15 px-3 py-3" placeholder={t('Reason')} value={timeOffDraft.reason} onChange={(event) => setTimeOffDraft({ ...timeOffDraft, reason: event.target.value })} required />
         <button className="rounded-md bg-teal px-4 py-3 font-bold text-white">{t('Send request')}</button>
       </form>
@@ -1161,7 +1166,7 @@ function RequestsPanel({ currentUser, employees, shifts, weekDays, timeOffReques
         {myRequests.map((request) => (
           <div key={request.id} className="rounded-lg bg-paper p-3 shadow-soft">
             <StatusBadge status={request.status} />
-            <p className="mt-2 text-sm text-charcoal/70">{request.start_date ? `${formatDate(request.start_date)} to ${formatDate(request.end_date)}` : `Coverage for ${formatDate(shifts.find((shift) => shift.id === request.shift_id)?.date)}`}</p>
+            <p className="mt-2 text-sm text-charcoal/70">{request.start_date ? `${formatDate(request.start_date)} to ${formatDate(request.end_date)} · ${timeOffPartLabel(request)}` : `Coverage for ${formatDate(shifts.find((shift) => shift.id === request.shift_id)?.date)}`}</p>
           </div>
         ))}
         {myRequests.length === 0 && <EmptyState text="No requests yet." />}
@@ -1226,7 +1231,7 @@ function ScheduleList({ employees, shifts, weekDays, timeOffRequests = [], onEdi
                 <div key={`off-${request.id}`} className="rounded-md border border-orange/20 bg-orange/10 p-3">
                   <div className="flex gap-3">
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange text-sm font-bold text-white">{initials(nameFor(employees, request.employee_id))}</div>
-                    <div><p className="font-bold">{nameFor(employees, request.employee_id)}</p><p className="text-sm font-bold text-orange">{t('Approved time off')}</p>{request.reason && <p className="mt-1 text-sm text-charcoal/55">{request.reason}</p>}</div>
+                    <div><p className="font-bold">{nameFor(employees, request.employee_id)}</p><p className="text-sm font-bold text-orange">{t('Approved time off')} · {timeOffPartLabel(request)}</p>{request.reason && <p className="mt-1 text-sm text-charcoal/55">{request.reason}</p>}</div>
                   </div>
                 </div>
               ))}
@@ -1430,7 +1435,10 @@ function scheduleLabelForTimes(startTime, endTime) {
 }
 
 function toIsoDate(date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatDate(value) {
@@ -1501,6 +1509,15 @@ function fromIsoDate(value) {
 
 function dateIsInRange(date, startDate, endDate) {
   return Boolean(date && startDate && endDate && date >= startDate && date <= endDate);
+}
+
+function timeOffPartLabel(request) {
+  const labels = {
+    opening: 'Opening shift',
+    closing: 'Closing shift',
+    all_day: 'All day',
+  };
+  return labels[request?.shift_part] || labels.all_day;
 }
 
 function isInstalledApp() {

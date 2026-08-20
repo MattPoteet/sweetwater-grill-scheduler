@@ -36,11 +36,29 @@ create table if not exists time_off_requests (
   employee_id uuid not null references employees(id) on delete cascade,
   start_date date not null,
   end_date date not null,
+  shift_part text not null default 'all_day' check (shift_part in ('opening', 'closing', 'all_day')),
   reason text not null default '',
   status text not null default 'Pending' check (status in ('Pending', 'Approved', 'Denied')),
   manager_note text not null default '',
   created_at timestamptz not null default now()
 );
+
+alter table time_off_requests add column if not exists shift_part text not null default 'all_day';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'time_off_requests_shift_part_check'
+      and conrelid = 'public.time_off_requests'::regclass
+  ) then
+    alter table time_off_requests
+      add constraint time_off_requests_shift_part_check
+      check (shift_part in ('opening', 'closing', 'all_day'));
+  end if;
+end;
+$$;
 
 create table if not exists coverage_requests (
   id uuid primary key default gen_random_uuid(),
