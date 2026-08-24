@@ -96,6 +96,14 @@ function SchedulerApp() {
 
   const currentUser = data.employees.find((employee) => employee.id === currentUserId);
   const isManager = currentUser?.role === 'manager';
+  // A manager whose job position is Server is a server-schedule manager. This
+  // keeps the access setting on the employee record without adding a second
+  // credentials system.
+  const canManageStaff = isManager && !isServer(currentUser);
+  const canManageShift = (shift) => canManageStaff || isServer(data.employees.find((employee) => employee.id === shift.employee_id));
+  const schedulableEmployees = data.employees.filter((employee) =>
+    employee.active && !isOpenShiftEmployee(employee) && (canManageStaff ? employee.role === 'employee' : isServer(employee))
+  );
   const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
   const weekShifts = data.shifts.filter((shift) => weekDays.some((day) => day.iso === shift.date));
   const visibleShifts = weekShifts
@@ -259,6 +267,10 @@ function SchedulerApp() {
 
   const saveShift = async (event) => {
     event.preventDefault();
+    const assignedEmployee = data.employees.find((employee) => employee.id === shiftDraft.employee_id);
+    if (!assignedEmployee || (!canManageStaff && !isServer(assignedEmployee))) {
+      return showActionError(new Error('You can schedule server staff only.'));
+    }
     const conflicts = getShiftConflicts(shiftDraft, data, editingShiftId);
     if (conflicts.length && !window.confirm(`Schedule warning:\n\n${conflicts.join('\n')}\n\nSave this shift anyway?`)) return;
     if (editingShiftId) {
@@ -281,7 +293,7 @@ function SchedulerApp() {
   };
 
   const publishWeek = async () => {
-    const draftIds = weekShifts.filter((shift) => shift.publication_status === 'draft').map((shift) => shift.id);
+    const draftIds = weekShifts.filter((shift) => shift.publication_status === 'draft' && canManageShift(shift)).map((shift) => shift.id);
     if (!draftIds.length) return window.alert('This week is already published.');
     const publishedAt = new Date().toISOString();
     const { data: published, error } = await supabase.from('shifts').update({ publication_status: 'published', published_at: publishedAt }).in('id', draftIds).select('*');
@@ -307,6 +319,7 @@ function SchedulerApp() {
   };
 
   const editShift = (shift) => {
+    if (!canManageShift(shift)) return showActionError(new Error('You can schedule server staff only.'));
     setEditingShiftId(shift.id);
     setShiftDraft({
       employee_id: shift.employee_id,
@@ -320,6 +333,8 @@ function SchedulerApp() {
   };
 
   const deleteShift = async (id) => {
+    const shift = data.shifts.find((item) => item.id === id);
+    if (!shift || !canManageShift(shift)) return showActionError(new Error('You can schedule server staff only.'));
     const { error } = await supabase.from('shifts').delete().eq('id', id);
     if (error) return showActionError(error);
     setData((current) => ({
@@ -495,7 +510,7 @@ function SchedulerApp() {
   const finishLogin = (employee) => {
     setCurrentUserId(employee.id);
     sessionStorage.setItem(SESSION_KEY, employee.id);
-    setActiveTab(employee.role === 'manager' ? 'dashboard' : 'mySchedule');
+    setActiveTab(employee.role === 'manager' ? (isServer(employee) ? 'schedule' : 'dashboard') : 'mySchedule');
     setLoginDraft({ email: '', credential: '' });
     setLoginError('');
   };
@@ -674,16 +689,17 @@ function SchedulerApp() {
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-4">
         <HomeIntro showInstallButton={!isStandalone} onInstall={handleInstallApp} />
 
-        {activeTab === 'dashboard' && isManager && (
+        {activeTab === 'dashboard' && canManageStaff && (
           <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} timeOffRequests={approvedTimeOff} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
         )}
-        {activeTab === 'employees' && isManager && (
+        {activeTab === 'employees' && canManageStaff && (
           <EmployeesPanel employees={data.employees} employeeDraft={employeeDraft} setEmployeeDraft={setEmployeeDraft} onSave={saveEmployee} onRemove={removeEmployee} onResetCode={resetEmployeeCode} />
         )}
         {activeTab === 'schedule' && isManager && (
           <ScheduleBuilder
             employees={data.employees}
-            shifts={visibleShifts}
+            schedulableEmployees={schedulableEmployees}
+            shifts={visibleShifts.filter(canManageShift)}
             weekDays={weekDays}
             weekOffset={weekOffset}
             setWeekOffset={setWeekOffset}
@@ -763,12 +779,20 @@ function SchedulerApp() {
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-charcoal/10 bg-paper/95 px-2 py-2 shadow-soft backdrop-blur safe-bottom">
         <div className="mx-auto grid max-w-5xl grid-cols-6 gap-1">
-          {isManager ? (
+          {canManageStaff ? (
             <>
               <NavButton icon={ShieldCheck} label="Home" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
               <NavButton icon={UsersRound} label="Staff" active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} />
               <NavButton icon={CalendarDays} label="Build" active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} />
               <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
+              <NavButton icon={BookOpen} label="PDF" active={activeTab === 'pdfSchedule'} onClick={() => setActiveTab('pdfSchedule')} />
+            </>
+          ) : isManager ? (
+            <>
+              <NavButton icon={UserRound} label="Mine" active={activeTab === 'mySchedule'} onClick={() => setActiveTab('mySchedule')} />
+              <NavButton icon={CalendarDays} label="Build" active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} />
+              <NavButton icon={CalendarDays} label="Calendar" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
+              <NavButton icon={UsersRound} label="Team" active={activeTab === 'teamSchedule'} onClick={() => setActiveTab('teamSchedule')} />
               <NavButton icon={BookOpen} label="PDF" active={activeTab === 'pdfSchedule'} onClick={() => setActiveTab('pdfSchedule')} />
             </>
           ) : (
@@ -1060,7 +1084,7 @@ function EmployeesPanel({ employees, employeeDraft, setEmployeeDraft, onSave, on
 }
 
 function ScheduleBuilder(props) {
-  const { employees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete, onPublish, conflicts, timeOffRequests } = props;
+  const { employees, schedulableEmployees, shifts, weekDays, weekOffset, setWeekOffset, shiftDraft, setShiftDraft, editingShiftId, onSave, onEdit, onDelete, onPublish, conflicts, timeOffRequests } = props;
   return (
     <div className="space-y-4">
       <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
@@ -1072,7 +1096,7 @@ function ScheduleBuilder(props) {
         <SectionTitle icon={Clock} title={editingShiftId ? 'Edit shift' : 'Create shift'} />
         <select className="rounded-md border border-charcoal/15 px-3 py-3" value={shiftDraft.employee_id} onChange={(event) => setShiftDraft({ ...shiftDraft, employee_id: event.target.value })} required>
           <option value="">Assign employee</option>
-          {employees.filter((employee) => employee.active && employee.role === 'employee' && !isOpenShiftEmployee(employee)).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.position}</option>)}
+          {schedulableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.position}</option>)}
         </select>
         <div className="grid grid-cols-3 gap-2">
           <input className="rounded-md border border-charcoal/15 px-3 py-3" type="date" value={shiftDraft.date} onChange={(event) => setShiftDraft({ ...shiftDraft, date: event.target.value })} required />
