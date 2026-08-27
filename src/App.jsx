@@ -132,7 +132,6 @@ function SchedulerApp() {
       .then((nextData) => {
         if (!isMounted) return;
         setData(nextData);
-        setWeekOffset(getInitialWeekOffsetFromShifts(nextData.shifts));
         setLoadStatus('ready');
       })
       .catch((error) => {
@@ -690,7 +689,7 @@ function SchedulerApp() {
         <HomeIntro showInstallButton={!isStandalone} onInstall={handleInstallApp} />
 
         {activeTab === 'dashboard' && canManageStaff && (
-          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} timeOffRequests={approvedTimeOff} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
+          <ManagerDashboard data={data} visibleShifts={visibleShifts} weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} timeOffRequests={approvedTimeOff} onApproveTimeOff={decideTimeOff} onApproveCoverage={decideCoverage} onReopenAvailableShift={reopenAvailableShift} />
         )}
         {activeTab === 'employees' && canManageStaff && (
           <EmployeesPanel employees={data.employees} employeeDraft={employeeDraft} setEmployeeDraft={setEmployeeDraft} onSave={saveEmployee} onRemove={removeEmployee} onResetCode={resetEmployeeCode} />
@@ -968,7 +967,7 @@ function SetupState({ title, message }) {
   );
 }
 
-function ManagerDashboard({ data, visibleShifts, weekDays, timeOffRequests, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
+function ManagerDashboard({ data, visibleShifts, weekDays, weekOffset, setWeekOffset, timeOffRequests, onApproveTimeOff, onApproveCoverage, onReopenAvailableShift }) {
   const pendingTimeOff = data.timeOffRequests.filter((request) => request.status === 'Pending');
   const pendingCoverage = data.coverageRequests.filter((request) => request.status === 'Pending');
   const deniedAvailableShifts = data.coverageRequests.filter((request) => {
@@ -995,6 +994,7 @@ function ManagerDashboard({ data, visibleShifts, weekDays, timeOffRequests, onAp
         onReopenAvailableShift={onReopenAvailableShift}
       />
       <SectionTitle icon={CalendarDays} title="Week at a glance" />
+      <WeekControls weekDays={weekDays} weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
       <ScheduleList employees={data.employees} shifts={visibleShifts} weekDays={weekDays} timeOffRequests={timeOffRequests} />
     </div>
   );
@@ -1458,9 +1458,10 @@ function ApprovalItem({ title, detail, onApprove, onDeny, disabled }) {
 
 function WeekControls({ weekDays, weekOffset, setWeekOffset }) {
   const { t } = useLanguage();
+  const previousWeekIsArchived = weekOffset <= 0;
   return (
     <div className="flex items-center justify-between rounded-lg bg-charcoal p-3 text-cream shadow-soft">
-      <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset - 1)} aria-label={t('Previous week')}><ChevronLeft size={19} /></button>
+      <button className="rounded-md bg-white/10 p-2 disabled:cursor-not-allowed disabled:opacity-35" disabled={previousWeekIsArchived} onClick={() => setWeekOffset(weekOffset - 1)} aria-label={t('Previous week')}><ChevronLeft size={19} /></button>
       <p className="text-center text-sm font-bold">{formatDate(weekDays[0].iso)} - {formatDate(weekDays[6].iso)}</p>
       <button className="rounded-md bg-white/10 p-2" onClick={() => setWeekOffset(weekOffset + 1)} aria-label={t('Next week')}><ChevronRight size={19} /></button>
     </div>
@@ -1726,27 +1727,6 @@ async function buildSchedulePdf(employees, shifts, weekDays, timeOffRequests) {
   });
 
   return document;
-}
-
-function getInitialWeekOffsetFromShifts(shifts) {
-  if (!shifts.length) {
-    return 0;
-  }
-
-  const countsByWeek = shifts.reduce((counts, shift) => {
-    const weekStart = toIsoDate(getMonday(fromIsoDate(shift.date)));
-    counts[weekStart] = (counts[weekStart] || 0) + 1;
-    return counts;
-  }, {});
-  const [bestWeekStart] = Object.entries(countsByWeek).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-  return getWeekOffsetForDate(bestWeekStart);
-}
-
-function getWeekOffsetForDate(value) {
-  const todayMonday = getMonday(new Date());
-  const targetMonday = getMonday(fromIsoDate(value));
-  const millisecondsPerWeek = 7 * 24 * 60 * 60 * 1000;
-  return Math.round((targetMonday - todayMonday) / millisecondsPerWeek);
 }
 
 function getMonday(date) {
